@@ -26,7 +26,7 @@ const dictionary: Record<string, { en: string; hi: string }> = {
   'nav.financialPlan': { en: 'Financial Plan', hi: 'वित्तीय योजना' },
   'nav.chat': { en: 'Chat Assistant', hi: 'चैट सहायक' },
   'nav.compare': { en: 'Compare Businesses', hi: 'व्यवसायों की तुलना' },
-  'nav.arthniti': { en: 'Arthniti', hi: 'अर्थनीति' },
+  'nav.arthniti': { en: 'Vyapar-Mitra', hi: 'व्यापार-मित्र' },
   'nav.tools': { en: 'Tools', hi: 'उपकरण' },
 
   // Advisory Page
@@ -97,7 +97,7 @@ const dictionary: Record<string, { en: string; hi: string }> = {
   'financial.moratoriumInterest': { en: 'Moratorium Interest (Capitalized)', hi: 'मोरेटोरियम ब्याज (पूंजीकृत)' },
 
   // Chat
-  'chat.title': { en: 'Arthniti Assistant', hi: 'अर्थनीति सहायक' },
+  'chat.title': { en: 'Vyapar-Mitra Assistant', hi: 'व्यापार-मित्र सहायक' },
   'chat.placeholder': { en: 'Ask about schemes, EMI, eligibility...', hi: 'योजनाओं, EMI, पात्रता के बारे में पूछें...' },
   'chat.send': { en: 'Send', hi: 'भेजें' },
   'chat.thinking': { en: 'Thinking...', hi: 'सोच रहा हूँ...' },
@@ -125,7 +125,7 @@ const dictionary: Record<string, { en: string; hi: string }> = {
   'common.back': { en: 'Back', hi: 'वापस' },
   'common.viewReport': { en: 'View Feasibility Report', hi: 'व्यवहार्यता रिपोर्ट देखें' },
   'common.viewFinancial': { en: 'View Financial Plan', hi: 'वित्तीय योजना देखें' },
-  'common.welcome': { en: 'Welcome to Arthniti', hi: 'अर्थनीति में आपका स्वागत है' },
+  'common.welcome': { en: 'Welcome to Vyapar-Mitra', hi: 'व्यापार-मित्र में आपका स्वागत है' },
   'common.welcomeSubtitle': { en: 'AI-powered business advisory for rural micro-entrepreneurs', hi: 'ग्रामीण सूक्ष्म उद्यमियों के लिए AI-संचालित व्यवसाय सलाह' },
   'common.startAdvisory': { en: 'Start Business Advisory', hi: 'व्यवसाय सलाह शुरू करें' },
   'common.lastReport': { en: 'View Last Report', hi: 'अंतिम रिपोर्ट देखें' },

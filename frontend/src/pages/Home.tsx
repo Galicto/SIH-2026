@@ -1,60 +1,17 @@
 import { useWallet } from '@txnlab/use-wallet-react'
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import DashboardLayout from '../components/DashboardLayout'
 import ConnectWallet from '../components/ConnectWallet'
 import CinematicBackground from '../components/CinematicBackground'
 import { usePredX } from '../context/PredXContext'
 import { ellipseAddress } from '../utils/ellipseAddress'
-import { useOraclePrice } from '../hooks/useOraclePrice'
-import algosdk from 'algosdk'
-import { useReveal, revealClass } from '../hooks/useReveal'
-import AnimatedNumber from '../components/AnimatedNumber'
-
-const USD_TO_INR = 85.5
 
 const Home: React.FC = () => {
   const { activeAddress } = useWallet()
-  const { myPositions, markets, navigate, isBalanceHidden, toggleBalanceVisibility } = usePredX()
-  const { algoPrice } = useOraclePrice()
-  const [algoBalance, setAlgoBalance] = useState<number>(0)
+  const { navigate } = usePredX()
   const [openWalletModal, setOpenWalletModal] = useState<boolean>(false)
 
   const toggleWalletModal = () => setOpenWalletModal(!openWalletModal)
-
-  /* ─── Scroll Reveal Hooks ─── */
-  const welcomeReveal = useReveal({ delay: 0 });
-  const balanceReveal = useReveal({ delay: 80 });
-  const positionsReveal = useReveal({ delay: 160 });
-  const wageredReveal = useReveal({ delay: 240 });
-  const payoutReveal = useReveal({ delay: 320 });
-  const actionsReveal = useReveal({ delay: 100 });
-  const predictionsReveal = useReveal({ delay: 150 });
-
-  useEffect(() => {
-    if (!activeAddress) return
-    const fetchBalance = async () => {
-      try {
-        const algodClient = new algosdk.Algodv2(
-          '',
-          import.meta.env.VITE_ALGOD_SERVER || 'https://testnet-api.algonode.cloud',
-          ''
-        )
-        const info = await algodClient.accountInformation(activeAddress).do()
-        setAlgoBalance(Number(info.amount) / 1_000_000)
-      } catch (err) {
-        console.error('Failed to fetch balance:', err)
-      }
-    }
-    fetchBalance()
-    const interval = setInterval(fetchBalance, 10000)
-    return () => clearInterval(interval)
-  }, [activeAddress])
-
-  const activePredictions = myPositions.filter(p => p.status === 'running')
-  const totalWagered = myPositions.reduce((acc, pos) => acc + pos.amount, 0)
-  const totalPotential = myPositions.reduce((acc, pos) => acc + (pos.status === 'running' ? pos.potential : 0), 0)
-  const usdBalance = algoPrice ? (algoBalance * algoPrice) : 0
-  const inrBalance = usdBalance * USD_TO_INR
 
   /* ─── LOGGED-OUT: Premium Login Gateway ─── */
   if (!activeAddress) {
@@ -69,12 +26,12 @@ const Home: React.FC = () => {
           <div className="arthniti-login-panel">
             {/* Brand identity */}
             <div className="arthniti-login-brand">
-              <img 
-                src="/logo-transparent.png" 
-                alt="Arthniti" 
-                className="arthniti-login-logo" 
+              <img
+                src="/logo-transparent.png"
+                alt="Vyapar-Mitra"
+                className="arthniti-login-logo"
               />
-              <h1 className="arthniti-login-title">Arthniti</h1>
+              <h1 className="arthniti-login-title">Vyapar-Mitra</h1>
             </div>
 
             {/* Decorative separator */}
@@ -125,7 +82,7 @@ const Home: React.FC = () => {
             <div className="absolute right-0 top-0 w-96 h-96 bg-gradient-to-bl from-[#FF5A00]/15 to-transparent rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3"></div>
             
             <h1 className="text-3xl md:text-5xl font-headline font-bold text-on-surface mb-2 relative z-10">
-              Welcome to Arthniti.
+              Welcome to Vyapar-Mitra.
             </h1>
             <p className="text-on-surface/60 max-w-xl text-sm md:text-base relative z-10 font-body">
               Connected as <span className="text-[#FF5A00] font-semibold">{ellipseAddress(activeAddress, 6)}</span>. AI-powered business advisory and financial planning for rural micro-entrepreneurs.
@@ -133,33 +90,9 @@ const Home: React.FC = () => {
           </div>
         </section>
 
-        {/* Balance + Quick Stats */}
-        <section className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 mb-8">
-          {/* ALGO Balance */}
-          <div className="bg-on-surface/5 backdrop-blur-xl p-6 rounded-2xl border border-on-surface/10 relative overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.2)] group hover:border-[#FF5A00]/30 transition-colors">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#FF5A00]/10 blur-[40px] group-hover:bg-[#FF5A00]/20 transition-colors"></div>
-            <div className="flex items-center justify-between relative z-10">
-              <span className="text-on-surface/50 font-body text-xs uppercase tracking-widest font-semibold">ALGO Balance</span>
-              <button
-                onClick={toggleBalanceVisibility}
-                className="text-on-surface/30 hover:text-on-surface transition-colors bg-on-surface/5 backdrop-blur-md p-1.5 rounded-lg border border-on-surface/10"
-              >
-                <span className="material-symbols-outlined text-[16px]">
-                  {isBalanceHidden ? 'visibility_off' : 'visibility'}
-                </span>
-              </button>
-            </div>
-            <div className="text-4xl font-headline font-normal text-on-surface mt-3 relative z-10 tracking-tight">
-              {isBalanceHidden ? '****' : <AnimatedNumber value={algoBalance} decimals={2} />} <span className="text-lg text-on-surface/40">ALGO</span>
-            </div>
-            {algoPrice && !isBalanceHidden && (
-              <div className="flex items-center gap-2 mt-2 relative z-10">
-                <p className="text-xs text-on-surface/40 font-body">≈ ₹<AnimatedNumber value={inrBalance} decimals={0} /> INR</p>
-              </div>
-            )}
-          </div>
-
-          {/* Arthniti Quick Stats */}
+        {/* Quick Stats */}
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
+          {/* Business Advisory */}
           <div className="bg-on-surface/5 backdrop-blur-xl p-6 rounded-2xl border border-on-surface/10 shadow-[0_4px_20px_rgba(0,0,0,0.2)] group hover:border-on-surface/20 transition-colors cursor-pointer"
             onClick={() => navigate('advisory')}
           >

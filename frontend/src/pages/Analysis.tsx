@@ -243,7 +243,7 @@ export default function Analysis() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'Arthniti_Behavioral_Report.pdf');
+      link.setAttribute('download', 'Vyapar-Mitra_Behavioral_Report.pdf');
       document.body.appendChild(link);
       link.click();
       link.parentNode?.removeChild(link);

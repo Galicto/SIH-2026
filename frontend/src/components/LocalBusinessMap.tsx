@@ -30,18 +30,18 @@ export default function LocalBusinessMap({ location, business }: LocalBusinessMa
       
       {/* Map Overlay Pattern */}
       <div className="absolute inset-0 opacity-10" style={{
-        backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)',
+        backgroundImage: 'radial-gradient(rgb(var(--on-surface)) 1px, transparent 1px)',
         backgroundSize: '20px 20px'
       }}></div>
 
       <div className="absolute top-4 left-4 z-10 bg-surface-container-high/90 backdrop-blur p-3 rounded-xl border border-outline-variant/20 shadow-lg text-xs">
         <h4 className="font-bold text-on-surface mb-2">{location.village || location.block || location.district} Radius</h4>
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow"></span>
+          <span className="w-3 h-3 rounded-full bg-blue-500 border-2 border-background shadow"></span>
           <span className="text-on-surface-variant">Proposed Location</span>
         </div>
         <div className="flex items-center gap-2 mb-1.5">
-          <span className="w-3 h-3 rounded bg-red-500 border border-white shadow"></span>
+          <span className="w-3 h-3 rounded bg-red-500 border border-background shadow"></span>
           <span className="text-on-surface-variant">Estimated Competitors ({competitors})</span>
         </div>
         <div className="flex items-center gap-2">
@@ -54,7 +54,7 @@ export default function LocalBusinessMap({ location, business }: LocalBusinessMa
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
         <div className="relative">
           <div className="absolute -inset-4 bg-blue-500/20 rounded-full animate-ping"></div>
-          <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-[0_0_15px_rgba(59,130,246,0.8)] z-10 relative"></div>
+          <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-background shadow-[0_0_15px_rgba(59,130,246,0.8)] z-10 relative"></div>
           <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-surface-container-highest px-2 py-1 rounded text-[10px] font-bold text-on-surface whitespace-nowrap shadow-md">
             Your Proposed Site
           </div>
@@ -76,7 +76,7 @@ export default function LocalBusinessMap({ location, business }: LocalBusinessMa
           style={{ top: `${node.top}%`, left: `${node.left}%` }}
         >
           {node.type === 'competitor' ? (
-            <div className="w-3 h-3 rounded bg-red-500 border border-white/50 shadow-md tooltip-trigger relative group">
+            <div className="w-3 h-3 rounded bg-red-500 border border-background/50 shadow-md tooltip-trigger relative group">
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-surface-container-highest px-2 py-1 rounded text-[9px] text-on-surface opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                 Estimated {business.name} competitor
               </div>

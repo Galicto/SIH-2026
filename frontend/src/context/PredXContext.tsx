@@ -127,7 +127,10 @@ const SYSTEM_ALERTS_STORAGE_KEY = 'predx-system-alerts';
 
 const getInitialThemeMode = (): ThemeMode => {
   if (typeof window === 'undefined') return 'dark';
-  return window.localStorage.getItem(THEME_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (saved === 'light' || saved === 'dark') return saved;
+  // No saved preference: match the OS, same as the pre-paint script in index.html
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 };
 
 const getInitialLayoutMode = (): LayoutMode => {
@@ -190,7 +193,8 @@ export const PredXProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       // Finance pages
       'analysis','wealth','education','goals','transactions',
       // Arthniti pages
-      'advisory','feasibility','financial-plan','arthniti-chat',
+      'advisory','feasibility','financial-plan','arthniti-chat','bank',
+      'explore','opportunities','compare',
     ];
     return validPages.includes(hash) ? hash : 'home';
   };

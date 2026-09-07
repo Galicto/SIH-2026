@@ -8,6 +8,8 @@
   --on-background: 224 226 234;
   --secondary: 188 199 222;
   --error: 255 180 171;
+  --success: 34 197 94;   /* #22c55e — 8.1:1 on dark bg */
+  --warning: 245 158 11;  /* #f59e0b — 8.7:1 on dark bg */
   --on-primary-container: 255 255 255;
   --tertiary-fixed-dim: 210 187 255;
   --surface-dim: 13 13 15;
@@ -58,6 +60,8 @@
   --on-background: 28 32 37;
   --secondary: 60 71 90;
   --error: 176 0 32;
+  --success: 21 128 61;   /* #15803d — 4.8:1 on light bg (AA) */
+  --warning: 180 83 9;    /* #b45309 — 4.9:1 on light bg (AA) */
   --on-primary-container: 255 255 255;
   --tertiary-fixed-dim: 120 52 233;
   --surface-dim: 224 226 234;
@@ -70,7 +74,7 @@
   --secondary-fixed-dim: 174 185 208;
   --surface-container-low: 245 247 250;
   --error-container: 255 218 214;
-  --primary-container: 0 109 67;
+  --primary-container: 194 68 0;
   --outline-variant: 200 210 204;
   --on-secondary-fixed-variant: 255 255 255;
   --surface-container-highest: 236 240 245;
@@ -82,7 +86,7 @@
   --on-tertiary-fixed: 255 255 255;
   --surface-container-high: 228 233 240;
   --inverse-primary: 82 255 172;
-  --primary: 0 57 32;
+  --primary: 194 68 0;   /* #c24400 — 4.9:1 on light bg (AA); was #003920, a bug */
   --tertiary: 63 0 142;
   --on-secondary-fixed: 255 255 255;
   --secondary-container: 188 199 222;

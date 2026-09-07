@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { useWallet } from '@txnlab/use-wallet-react';
 import { usePredX } from '../context/PredXContext';
 import Home from './Home';
-import Dashboard from './Dashboard';
 import Markets from './Markets';
 import Leaderboard from './Leaderboard';
 import BettingTerminal from './BettingTerminal';
@@ -24,6 +23,7 @@ import ArthnitiChat from './ArthnitiChat';
 import BusinessComparison from './BusinessComparison';
 import ExploreBusinesses from './ExploreBusinesses';
 import LocalOpportunities from './LocalOpportunities';
+import BankView from './BankView';
 
 // Pages that can be accessed without a wallet (public pages)
 const PUBLIC_PAGES = new Set(['home', 'markets', 'leaderboard', 'education', 'support']);
@@ -50,7 +50,11 @@ const AppRouter: React.FC = () => {
     case 'home':
       return <Home />;
     case 'dashboard':
-      return <Dashboard />;
+      // The old PredX wallet Dashboard is retired from the user flow; the
+      // Feasibility Report is the entrepreneur's results hub.
+      return <FeasibilityReport />;
+    case 'bank':
+      return <BankView />;
     case 'markets':
       return <Markets />;
     case 'leaderboard':

@@ -11,6 +11,8 @@ module.exports = {
         "on-background": colorVar('on-background'),
         "secondary": colorVar('secondary'),
         "error": colorVar('error'),
+        "success": colorVar('success'),
+        "warning": colorVar('warning'),
         "on-primary-container": colorVar('on-primary-container'),
         "tertiary-fixed-dim": colorVar('tertiary-fixed-dim'),
         "surface-dim": colorVar('surface-dim'),

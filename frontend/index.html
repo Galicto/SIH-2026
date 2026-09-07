@@ -1,11 +1,26 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="algodark" class="dark">
+<html lang="en">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Arthniti" />
-  <title>Arthniti</title>
+  <meta name="description" content="Vyapar-Mitra" />
+  <!-- Set theme before first paint to avoid a flash of the wrong theme.
+       Must stay in sync with getInitialThemeMode() in src/context/PredXContext.tsx -->
+  <script>
+    (function () {
+      try {
+        var m = localStorage.getItem('predx-theme-mode');
+        if (m !== 'light' && m !== 'dark') {
+          m = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        var r = document.documentElement;
+        r.classList.add(m === 'light' ? 'theme-light' : 'theme-dark');
+        r.setAttribute('data-theme', m === 'light' ? 'algolight' : 'algodark');
+      } catch (e) {}
+    })();
+  </script>
+  <title>Vyapar-Mitra</title>
   <!-- Google Fonts: Space Grotesk, Manrope, Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -23,9 +38,8 @@
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 
-  <!-- ElevenLabs ConvAI Widget -->
-
-  <elevenlabs-convai agent-id="agent_9501kpefnysyffetfexpfef822fh"></elevenlabs-convai>
+  <!-- ElevenLabs ConvAI Widget — script only; the <elevenlabs-convai> element is
+       mounted by DashboardLayout after wallet connect so it stays hidden on the login screen. -->
   <script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>
 </body>
 

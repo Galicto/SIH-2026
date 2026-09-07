@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '@txnlab/use-wallet-react';
-import { ellipseAddress } from '../utils/ellipseAddress';
+import { Phone, MessageCircle } from 'lucide-react';
 import { usePredX } from '../context/PredXContext';
 import ConnectWallet from './ConnectWallet';
 import { useLanguage } from '../lib/i18n';
+
+const WHATSAPP_URL = 'https://wa.me/917965853823?text=Hi%2C%20I%20want%20to%20plan%20a%20business';
+const CALL_URL = 'tel:+917965853823';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -85,8 +88,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             className="flex items-center cursor-pointer group px-1 py-1 rounded-xl transition-all duration-300"
             onClick={() => navigate('home')}
           >
-            <img src="/logo-transparent.png" alt="Arthniti Logo" className={`h-9 w-9 object-contain group-hover:scale-105 transition-transform ${themeMode === 'light' ? '' : 'drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]'}`} />
-            <span className={`font-headline font-black text-[22px] tracking-tighter ml-3 bg-clip-text text-transparent bg-gradient-to-r ${themeMode === 'light' ? 'from-gray-900 via-gray-700 to-gray-500' : 'from-white via-[#e0e8e4] to-[#8a9e92]'}`}>Arthniti</span>
+            <img src="/logo-transparent.png" alt="Vyapar-Mitra Logo" className={`h-9 w-9 object-contain group-hover:scale-105 transition-transform ${themeMode === 'light' ? '' : 'drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]'}`} />
+            <span className={`font-headline font-black text-[22px] tracking-tighter ml-3 bg-clip-text text-transparent bg-gradient-to-r ${themeMode === 'light' ? 'from-gray-900 via-gray-700 to-gray-500' : 'from-white via-[#e0e8e4] to-[#8a9e92]'}`}>Vyapar-Mitra</span>
           </div>
           <div className="flex items-center gap-4">
             <button 
@@ -125,44 +128,46 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
             className="flex items-center cursor-pointer group px-1 py-1 rounded-xl transition-all duration-300"
             onClick={() => navigate('home')}
           >
-            <img src="/logo-transparent.png" alt="Arthniti Logo" className={`h-8 w-8 object-contain mr-3 group-hover:scale-105 transition-transform ${themeMode === 'light' ? '' : 'drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]'}`} />
-            <span className="font-headline font-black text-xl tracking-wide text-on-surface uppercase">Arthniti</span>
+            <img src="/logo-transparent.png" alt="Vyapar-Mitra Logo" className={`h-8 w-8 object-contain mr-3 group-hover:scale-105 transition-transform ${themeMode === 'light' ? '' : 'drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]'}`} />
+            <span className="font-headline font-black text-xl tracking-wide text-on-surface uppercase">Vyapar-Mitra</span>
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
-          <div className={`hidden lg:flex items-center backdrop-blur-md px-4 py-2.5 rounded-xl border transition-all focus-within:border-[#FF5A00]/50 ${themeMode === 'light' ? 'bg-surface-container border-outline-variant/30 focus-within:bg-surface-container-high' : 'bg-on-surface/5 border-on-surface/10 focus-within:bg-on-surface/10'}`}>
-            <span className="material-symbols-outlined text-on-surface-variant text-[18px] mr-2">search</span>
-            <input className="bg-transparent border-none focus:ring-0 focus:outline-none text-sm w-56 text-on-surface font-body placeholder:text-on-surface-variant/50" placeholder="Search markets, assets, events..." type="text" />
-          </div>
-          
-          {activeAddress && (
-            <div className={`hidden sm:flex items-center backdrop-blur-md px-4 py-2.5 rounded-xl border gap-2 ${themeMode === 'light' ? 'bg-surface-container border-outline-variant/30' : 'bg-on-surface/5 border-on-surface/10'}`}>
-              <div className="w-1.5 h-1.5 rounded-full bg-[#00FF66] pulse-dot shadow-[0_0_8px_#00FF66]"></div>
-              <span className="text-on-surface-variant text-xs font-body font-semibold">WALLET CONNECTED <span className="text-on-surface ml-1">[{ellipseAddress(activeAddress, 4)}]</span></span>
-            </div>
-          )}
-          
+        <div className="flex items-center gap-2.5 md:gap-3">
           <button
             onClick={toggleLang}
             className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all backdrop-blur-md ${themeMode === 'light' ? 'bg-surface-container border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface' : 'bg-on-surface/5 border-on-surface/10 text-on-surface/70 hover:bg-on-surface/10 hover:border-on-surface/20 hover:text-on-surface'}`}
             title="Switch Language"
+            aria-label="Switch Language"
           >
             <span className="material-symbols-outlined text-[20px]">translate</span>
           </button>
-          <button 
+          <button
             onClick={() => setThemeMode(themeMode === 'light' ? 'dark' : 'light')}
             className={`w-10 h-10 rounded-full border flex items-center justify-center transition-all backdrop-blur-md ${themeMode === 'light' ? 'bg-surface-container border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface' : 'bg-on-surface/5 border-on-surface/10 text-on-surface/70 hover:bg-on-surface/10 hover:border-on-surface/20 hover:text-on-surface'}`}
+            title={themeMode === 'light' ? 'Dark mode' : 'Light mode'}
+            aria-label="Toggle theme"
           >
             <span className="material-symbols-outlined text-[20px]">{themeMode === 'light' ? 'dark_mode' : 'light_mode'}</span>
           </button>
-          
-          <button
-            className="bg-gradient-to-r from-[#FF6B00] to-[#FF8C00] text-on-surface font-body font-bold px-5 md:px-6 py-2.5 rounded-xl scale-95 active:scale-90 transition-transform hover:shadow-[0_0_20px_rgba(255,107,0,0.4)] text-xs uppercase tracking-wider"
-            onClick={toggleWalletModal}
+          <a
+            href={CALL_URL}
+            className="w-10 h-10 rounded-full border border-primary/25 bg-primary/10 flex items-center justify-center text-primary transition-all backdrop-blur-md hover:bg-primary/20 hover:border-primary/45"
+            title="Call Vyapar-Mitra"
+            aria-label="Call Vyapar-Mitra"
           >
-            {activeAddress ? 'Connected' : 'Connect Wallet'}
-          </button>
+            <Phone className="w-[18px] h-[18px]" />
+          </a>
+          <a
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-10 h-10 rounded-full border border-primary/25 bg-primary/10 flex items-center justify-center text-primary transition-all backdrop-blur-md hover:bg-primary/20 hover:border-primary/45"
+            title="Chat on WhatsApp"
+            aria-label="Chat on WhatsApp"
+          >
+            <MessageCircle className="w-[18px] h-[18px]" />
+          </a>
         </div>
       </header>
 
@@ -231,7 +236,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
 
 
         <div className="mt-auto space-y-1 pt-4">
-          <a 
+          <a
+            className={currentPage === 'bank'
+              ? sideItemActiveClass
+              : sideItemClass
+            }
+            onClick={() => navigate('bank')}
+          >
+            <span className="material-symbols-outlined" style={currentPage === 'bank' ? { fontVariationSettings: "'FILL' 1" } : {}}>
+              account_balance
+            </span>
+            SCA / Bank View
+          </a>
+          <a
             className={currentPage === 'settings'
               ? sideItemActiveClass
               : sideItemClass

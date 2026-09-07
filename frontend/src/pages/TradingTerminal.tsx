@@ -770,7 +770,7 @@ const TradingTerminal: React.FC = () => {
                       </div>
                       <div className="flex justify-between text-xs">
                         <span className="text-on-surface-variant">Network</span>
-                        <span className="font-bold text-primary-container">Arthniti Simulation</span>
+                        <span className="font-bold text-primary-container">Vyapar-Mitra Simulation</span>
                       </div>
                       <div className="flex justify-between text-xs border-t border-outline-variant/10 pt-2">
                         <span className="text-on-surface-variant">Trade Amount</span>

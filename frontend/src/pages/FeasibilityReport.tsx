@@ -83,9 +83,14 @@ export default function FeasibilityReport() {
   if (!profile || !business) {
     return (
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto px-4 pb-20 pt-20 text-center">
-          <h2 className="text-2xl font-headline font-bold text-on-surface mb-4">No Report Data</h2>
-          <button onClick={() => navigate('explore')} className="bg-[#FF5A00] text-white px-6 py-3 rounded-xl font-bold">Go Back to Explore</button>
+        <div className="max-w-lg mx-auto px-4 pb-20 pt-20 text-center">
+          <span className="material-symbols-outlined text-5xl text-on-surface/30 mb-4">assignment</span>
+          <h2 className="text-2xl font-headline font-bold text-on-surface mb-2">No report yet</h2>
+          <p className="text-sm text-on-surface/60 mb-6">
+            The feasibility report is built from your profile and a chosen business. Start with
+            Business Advisory, then explore and compare options to pick one.
+          </p>
+          <button onClick={() => navigate('advisory')} className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold">Start Business Advisory</button>
         </div>
       </DashboardLayout>
     );
@@ -125,7 +130,7 @@ export default function FeasibilityReport() {
             </button>
             <button
               onClick={() => navigate('financial-plan')}
-              className="flex items-center gap-2 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
+              className="flex items-center gap-2 bg-gradient-to-r from-primary to-[#FF8C00] text-on-primary px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all"
             >
               <span className="material-symbols-outlined text-[18px]">receipt_long</span>
               View Passport
@@ -137,16 +142,16 @@ export default function FeasibilityReport() {
         <div className="flex items-center gap-4 border-b border-outline-variant/10 mb-6">
           <button
             onClick={() => setActiveTab('report')}
-            className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'report' ? 'border-[#FF5A00] text-[#FF5A00]' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}
+            className={`pb-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'report' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}
           >
             Detailed Analysis
           </button>
           <button
             onClick={() => setActiveTab('map')}
-            className={`pb-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'map' ? 'border-[#FF5A00] text-[#FF5A00]' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}
+            className={`pb-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'map' ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'}`}
           >
             Local Business Map
-            {profile.location.isDemoData && <span className="bg-amber-500/20 text-amber-500 text-[9px] px-1.5 py-0.5 rounded uppercase">Demo</span>}
+            {profile.location.isDemoData && <span className="bg-warning/20 text-warning text-[9px] px-1.5 py-0.5 rounded uppercase">Demo</span>}
           </button>
         </div>
 
@@ -161,7 +166,7 @@ export default function FeasibilityReport() {
                 <h3 className="text-sm font-bold text-on-surface-variant uppercase tracking-wider mb-4 flex items-center justify-between">
                   Executive Summary
                   {report?.strategicAdvisory?.status === 'ready' && (
-                    <span className="text-[10px] bg-[#FF5A00]/20 text-[#FF5A00] px-2 py-1 rounded-md">AI Verified</span>
+                    <span className="text-[10px] bg-primary/20 text-primary px-2 py-1 rounded-md">AI Verified</span>
                   )}
                 </h3>
                 
@@ -172,9 +177,9 @@ export default function FeasibilityReport() {
                     <div className="h-4 bg-on-surface/10 rounded w-4/6"></div>
                   </div>
                 ) : error ? (
-                  <div className="text-sm text-red-400 mb-4 bg-red-500/10 p-3 rounded-lg border border-red-500/20 flex justify-between items-center">
+                  <div className="text-sm text-error mb-4 bg-error/10 p-3 rounded-lg border border-error/20 flex justify-between items-center">
                     {error}
-                    <button onClick={fetchReport} className="px-3 py-1 bg-red-500/20 rounded hover:bg-red-500/30">Retry</button>
+                    <button onClick={fetchReport} className="px-3 py-1 bg-error/20 text-error rounded hover:bg-error/30">Retry</button>
                   </div>
                 ) : (
                   <p className="text-sm text-on-surface leading-relaxed mb-4">
@@ -185,7 +190,7 @@ export default function FeasibilityReport() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-on-surface/5 rounded-xl p-3 border border-outline-variant/5">
                     <p className="text-[10px] text-on-surface-variant uppercase mb-1">Viability Score</p>
-                    <p className="text-xl font-bold text-[#00FFA3]">{business.demandProxyScore}</p>
+                    <p className="text-xl font-bold text-success">{business.demandProxyScore}</p>
                   </div>
                   <div className="bg-on-surface/5 rounded-xl p-3 border border-outline-variant/5">
                     <p className="text-[10px] text-on-surface-variant uppercase mb-1">Competition</p>
@@ -213,26 +218,26 @@ export default function FeasibilityReport() {
                       <div className="bg-on-surface/5 animate-pulse h-32 rounded-xl"></div>
                     </div>
                   ) : report?.strategicAdvisory?.status === 'unavailable' || report?.strategicAdvisory?.status === 'error' ? (
-                    <div className="mb-6 p-4 bg-red-500/10 rounded-xl border border-red-500/20 text-center">
+                    <div className="mb-6 p-4 bg-error/10 rounded-xl border border-error/20 text-center">
                       <p className="text-xs text-on-surface/80 mb-2">{report.strategicAdvisory.message || "This insight is temporarily unavailable. Your financial plan is still available."}</p>
-                      <button onClick={fetchReport} className="bg-red-500/20 text-red-500 px-4 py-1.5 rounded text-xs font-bold hover:bg-red-500/30 transition-colors">
+                      <button onClick={fetchReport} className="bg-error/20 text-error px-4 py-1.5 rounded text-xs font-bold hover:bg-error/30 transition-colors">
                         Retry AI Insight
                       </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
-                        <h4 className="text-emerald-500 font-bold text-xs uppercase mb-2">Why Recommended</h4>
+                      <div className="bg-success/10 border border-success/20 p-4 rounded-xl">
+                        <h4 className="text-success font-bold text-xs uppercase mb-2">Why Recommended</h4>
                         <ul className="text-xs text-on-surface/80 space-y-1 list-disc pl-4">
                           {report?.strategicAdvisory?.advisory?.whyRecommended?.map((r: any, i: number) => <li key={i}>{typeof r === 'object' ? JSON.stringify(r) : safeString(r)}</li>)}
                         </ul>
                       </div>
-                      <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
-                        <h4 className="text-red-400 font-bold text-xs uppercase mb-2">Risks & Mitigations</h4>
+                      <div className="bg-error/10 border border-error/20 p-4 rounded-xl">
+                        <h4 className="text-error font-bold text-xs uppercase mb-2">Risks & Mitigations</h4>
                         <ul className="text-xs text-on-surface/80 space-y-2 pl-2">
                           {report?.strategicAdvisory?.advisory?.risksAndMitigations?.map((r: any, i: number) => (
                             <li key={i}>
-                              <span className="font-bold text-red-400 block">{typeof r?.risk === 'object' ? JSON.stringify(r.risk) : (safeString(r?.risk) || 'Risk factor')}</span>
+                              <span className="font-bold text-error block">{typeof r?.risk === 'object' ? JSON.stringify(r.risk) : (safeString(r?.risk) || 'Risk factor')}</span>
                               <span className="text-on-surface/60">{typeof r?.mitigation === 'object' ? JSON.stringify(r.mitigation) : (safeString(r?.mitigation) || typeof r === 'string' ? safeString(r) : 'Mitigation unavailable')}</span>
                             </li>
                           ))}
@@ -288,9 +293,9 @@ export default function FeasibilityReport() {
               </div>
 
               {/* Scheme Matcher */}
-              <div className="bg-surface-container-high rounded-2xl p-6 border border-[#FF5A00]/20 shadow-[0_4px_20px_rgba(255,90,0,0.05)] min-h-[300px]">
+              <div className="bg-surface-container-high rounded-2xl p-6 border border-primary/20 shadow-[0_4px_20px_rgb(var(--primary)/0.05)] min-h-[300px]">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="material-symbols-outlined text-[#FF5A00]">assured_workload</span>
+                  <span className="material-symbols-outlined text-primary">assured_workload</span>
                   <h3 className="text-sm font-bold text-on-surface uppercase tracking-wider">Scheme Matching</h3>
                 </div>
                 <p className="text-xs text-on-surface/60">Based on your {profile.isArtisan ? 'artisan' : ''} profile in {profile.location.state}.</p>

@@ -2,17 +2,22 @@ fastapi==0.115.12
 uvicorn==0.34.2
 pydantic==2.11.3
 python-multipart==0.0.20
-torch==2.5.1
-transformers==4.47.1
-safetensors==0.5.3
 pandas==2.2.3
 matplotlib==3.9.4
 reportlab==4.2.5
-scikit-learn==1.6.1
-google-generativeai==0.8.4
 python-dotenv==1.0.1
 requests==2.32.3
-accelerate==1.3.0
-ollama==0.4.7
+
+# DistilBERT expense classifier (/api/upload-expenses "Predictive Expense Analysis").
+# main.py loads these lazily on first use — the Arthniti advisory + AI chat endpoints
+# still work if they're absent, but the expense categorizer returns "Unknown" without them.
+# ~200 MB (CPU-only torch).
+torch==2.5.1
+transformers==4.47.1
+safetensors==0.5.3
+scikit-learn==1.8.0   # must match the version label_encoder.pkl was pickled with
+
+# Optional — local-LLM offline fallback for the finance-tracker LLM endpoints:
+#   pip install ollama==0.4.7
 urllib3==2.2.3
 charset-normalizer==3.4.1

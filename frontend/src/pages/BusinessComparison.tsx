@@ -80,9 +80,14 @@ export default function BusinessComparison() {
   if (!profile || compared.length === 0) {
     return (
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto px-4 pb-20 pt-20 text-center">
-          <h2 className="text-2xl font-headline font-bold text-on-surface mb-4">No Comparison Data</h2>
-          <button onClick={() => navigate('advisory')} className="bg-[#FF5A00] text-white px-6 py-3 rounded-xl font-bold">Go Back to Advisory</button>
+        <div className="max-w-lg mx-auto px-4 pb-20 pt-20 text-center">
+          <span className="material-symbols-outlined text-5xl text-on-surface/30 mb-4">compare_arrows</span>
+          <h2 className="text-2xl font-headline font-bold text-on-surface mb-2">Nothing to compare yet</h2>
+          <p className="text-sm text-on-surface/60 mb-6">
+            Pick 2–3 business ideas on Explore, then come back here. Start with Business Advisory
+            to set your location and budget.
+          </p>
+          <button onClick={() => navigate('advisory')} className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold">Start Business Advisory</button>
         </div>
       </DashboardLayout>
     );

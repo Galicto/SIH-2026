@@ -3,12 +3,13 @@ import { SnackbarProvider, closeSnackbar } from 'notistack'
 import { PredXProvider } from './context/PredXContext'
 import { AnalysisProvider } from './context/AnalysisContext'
 import AppRouter from './pages/AppRouter'
+import PostLoginWidgets from './components/PostLoginWidgets'
 
 const supportedWallets: SupportedWallet[] = [
   { id: WalletId.DEFLY },
   { id: WalletId.PERA, options: { compactMode: true } },
   { id: WalletId.EXODUS },
-  { id: WalletId.LUTE, options: { siteName: 'Arthniti' } },
+  { id: WalletId.LUTE, options: { siteName: 'Vyapar-Mitra' } },
 ]
 
 const walletManager = new WalletManager({
@@ -34,6 +35,7 @@ export default function App() {
         <PredXProvider>
           <AnalysisProvider>
             <AppRouter />
+            <PostLoginWidgets />
           </AnalysisProvider>
         </PredXProvider>
       </WalletProvider>

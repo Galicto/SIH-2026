@@ -97,10 +97,10 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
 
   if (state.status === "error") {
     return (
-      <div className="text-xs text-on-surface/80 p-4 bg-red-500/10 rounded-xl text-center border border-red-500/20">
+      <div className="text-xs text-on-surface/80 p-4 bg-error/10 rounded-xl text-center border border-error/20">
         <p className="mb-2 font-bold">{state.message || "We could not process scheme matching right now."}</p>
         {(onRetry || profile) && (
-          <button onClick={onRetry || (() => setInternalState(prev => ({ ...prev, status: "checking" })))} className="bg-red-500/20 text-red-500 px-4 py-1.5 rounded text-xs font-bold hover:bg-red-500/30 transition-colors">
+          <button onClick={onRetry || (() => setInternalState(prev => ({ ...prev, status: "checking" })))} className="bg-error/20 text-error px-4 py-1.5 rounded text-xs font-bold hover:bg-error/30 transition-colors">
             Retry
           </button>
         )}
@@ -110,11 +110,11 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
 
   if (state.status === "unavailable") {
     return (
-      <div className="text-xs text-on-surface/80 p-4 bg-amber-500/10 rounded-xl text-center border border-amber-500/20">
+      <div className="text-xs text-on-surface/80 p-4 bg-warning/10 rounded-xl text-center border border-warning/20">
         <p className="mb-2 font-bold">{state.message || "Verified scheme information is temporarily unavailable."}</p>
         <div className="flex justify-center gap-2">
           {(onRetry || profile) && (
-            <button onClick={onRetry || (() => setInternalState(prev => ({ ...prev, status: "checking" })))} className="bg-amber-500/20 text-amber-500 px-4 py-1.5 rounded text-xs font-bold hover:bg-amber-500/30 transition-colors">
+            <button onClick={onRetry || (() => setInternalState(prev => ({ ...prev, status: "checking" })))} className="bg-warning/20 text-warning px-4 py-1.5 rounded text-xs font-bold hover:bg-warning/30 transition-colors">
               Retry scheme matching
             </button>
           )}
@@ -142,14 +142,14 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
               <p className="text-[10px] text-on-surface-variant">{safeString(m?.agency)}</p>
             </div>
             {m?.officialUrl && (
-              <a href={m.officialUrl} target="_blank" rel="noreferrer" className="shrink-0 w-6 h-6 bg-[#FF5A00]/10 text-[#FF5A00] rounded flex items-center justify-center hover:bg-[#FF5A00]/20 transition-colors" title="Official Source">
+              <a href={m.officialUrl} target="_blank" rel="noreferrer" className="shrink-0 w-6 h-6 bg-primary/10 text-primary rounded flex items-center justify-center hover:bg-primary/20 transition-colors" title="Official Source">
                 <span className="material-symbols-outlined text-[14px]">open_in_new</span>
               </a>
             )}
           </div>
           
           {m?.whyRelevant && (
-            <div className="bg-[#FF5A00]/5 text-[#FF5A00] text-[11px] p-2 rounded mb-3 border border-[#FF5A00]/10 font-medium">
+            <div className="bg-primary/5 text-primary text-[11px] p-2 rounded mb-3 border border-primary/10 font-medium">
               <span className="material-symbols-outlined text-[12px] align-middle mr-1">tips_and_updates</span>
               {safeString(m.whyRelevant)}
             </div>

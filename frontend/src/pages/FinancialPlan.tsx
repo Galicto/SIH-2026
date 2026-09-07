@@ -94,9 +94,14 @@ export default function FinancialPlan() {
   if (!profile || !business) {
     return (
       <DashboardLayout>
-        <div className="max-w-4xl mx-auto px-4 pb-20 pt-20 text-center">
-          <h2 className="text-2xl font-headline font-bold text-on-surface mb-4">No Financial Data</h2>
-          <button onClick={() => navigate('explore')} className="bg-[#FF5A00] text-white px-6 py-3 rounded-xl font-bold">Go Back to Explore</button>
+        <div className="max-w-lg mx-auto px-4 pb-20 pt-20 text-center">
+          <span className="material-symbols-outlined text-5xl text-on-surface/30 mb-4">calculate</span>
+          <h2 className="text-2xl font-headline font-bold text-on-surface mb-2">No plan yet</h2>
+          <p className="text-sm text-on-surface/60 mb-6">
+            The financial plan needs your margin capital and a chosen business. Start with
+            Business Advisory, then explore and compare options to pick one.
+          </p>
+          <button onClick={() => navigate('advisory')} className="bg-primary text-on-primary px-6 py-3 rounded-xl font-bold">Start Business Advisory</button>
         </div>
       </DashboardLayout>
     );
@@ -123,7 +128,7 @@ export default function FinancialPlan() {
               {business.name} — {profile.location.district}
             </p>
           </div>
-          <button onClick={handleDownloadPDF} disabled={!isReady} className="flex items-center gap-2 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white px-6 py-3 rounded-xl text-sm font-body font-bold hover:shadow-[0_0_20px_rgba(255,90,0,0.3)] transition-all active:scale-95 disabled:opacity-50">
+          <button onClick={handleDownloadPDF} disabled={!isReady} className="flex items-center gap-2 bg-gradient-to-r from-primary to-[#FF8C00] text-on-primary px-6 py-3 rounded-xl text-sm font-body font-bold hover:shadow-[0_0_20px_rgb(var(--primary)/0.3)] transition-all active:scale-95 disabled:opacity-50">
             <span className="material-symbols-outlined text-[18px]">download</span>Generate Viability Passport
           </button>
         </section>
@@ -142,7 +147,7 @@ export default function FinancialPlan() {
                 <span className="text-[10px] font-label text-on-surface/50 uppercase tracking-widest block mb-2">Project Cost (Est.)</span>
                 <span className="text-2xl font-headline font-bold text-on-surface">{formatINR(f.projectCost)}</span>
               </div>
-              <div className="bg-on-surface/5 backdrop-blur-xl p-5 rounded-2xl border border-on-surface/10 border-b-2 border-b-[#FF5A00]">
+              <div className="bg-on-surface/5 backdrop-blur-xl p-5 rounded-2xl border border-on-surface/10 border-b-2 border-b-primary">
                 <span className="text-[10px] font-label text-on-surface/50 uppercase tracking-widest block mb-2">Required Credit</span>
                 <span className="text-2xl font-headline font-bold text-on-surface">{formatINR(f.requiredCredit)}</span>
               </div>

@@ -193,7 +193,7 @@ export default function ExploreBusinesses() {
           <button
             onClick={handleCompare}
             disabled={selectedIds.length < 2}
-            className="shrink-0 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white font-headline font-bold py-2.5 px-6 rounded-xl text-sm hover:shadow-[0_0_20px_rgba(255,90,0,0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="shrink-0 bg-gradient-to-r from-primary to-[#FF8C00] text-on-primary font-headline font-bold py-2.5 px-6 rounded-xl text-sm hover:shadow-[0_0_20px_rgb(var(--primary)/0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             Compare Selected ({selectedIds.length}/3)
             <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
@@ -225,12 +225,12 @@ export default function ExploreBusinesses() {
           </select>
 
           <label className="flex items-center gap-2 bg-surface-container border border-outline-variant/10 rounded-lg px-3 py-1.5 text-xs text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors">
-            <input type="checkbox" checked={filterCapital} onChange={e => setFilterCapital(e.target.checked)} className="rounded text-[#FF5A00] focus:ring-[#FF5A00]/50" />
+            <input type="checkbox" checked={filterCapital} onChange={e => setFilterCapital(e.target.checked)} className="rounded text-primary focus:ring-primary/50" />
             Within my budget (₹{Number(profile.marginCapital || 0).toLocaleString('en-IN')})
           </label>
 
           <label className="flex items-center gap-2 bg-surface-container border border-outline-variant/10 rounded-lg px-3 py-1.5 text-xs text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors">
-            <input type="checkbox" checked={filterScheme} onChange={e => setFilterScheme(e.target.checked)} className="rounded text-[#FF5A00] focus:ring-[#FF5A00]/50" />
+            <input type="checkbox" checked={filterScheme} onChange={e => setFilterScheme(e.target.checked)} className="rounded text-primary focus:ring-primary/50" />
             Scheme Supported
           </label>
 
@@ -241,13 +241,13 @@ export default function ExploreBusinesses() {
           )}
 
           {activeFilterCount > 0 && (
-            <button onClick={clearFilters} className="text-xs text-[#FF5A00] underline ml-1">Clear all filters</button>
+            <button onClick={clearFilters} className="text-xs text-primary underline ml-1">Clear all filters</button>
           )}
         </section>
 
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-on-surface/60">
-            <div className="w-10 h-10 border-3 border-[#FF5A00] border-t-transparent rounded-full animate-spin mb-4"></div>
+            <div className="w-10 h-10 border-3 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
             <p className="font-headline font-bold">Searching nearby businesses and opportunity signals…</p>
           </div>
         ) : status === 'provider_unavailable' ? (
@@ -258,7 +258,7 @@ export default function ExploreBusinesses() {
               {meta?.safeMessage || 'We could not fetch live points of interest for this radius.'}
             </p>
             <div className="flex flex-wrap justify-center gap-3 mb-6">
-              <button onClick={() => fetchBusinesses(profile)} className="bg-[#FF5A00]/10 text-[#FF5A00] px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF5A00]/20">Retry search</button>
+              <button onClick={() => fetchBusinesses(profile)} className="bg-primary/10 text-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/20">Retry search</button>
               <button onClick={() => setRadiusKm(10)} className="bg-surface-container-high text-on-surface px-4 py-2 rounded-xl text-sm font-bold">Increase radius to 10 km</button>
               <button onClick={() => setRadiusKm(20)} className="bg-surface-container-high text-on-surface px-4 py-2 rounded-xl text-sm font-bold">Increase radius to 20 km</button>
               <button onClick={() => navigate('advisory')} className="bg-surface-container-high text-on-surface px-4 py-2 rounded-xl text-sm font-bold hover:bg-surface-container-highest">Edit location</button>
@@ -277,7 +277,7 @@ export default function ExploreBusinesses() {
                   sessionStorage.setItem('arthniti-manual-observations', manualNote);
                   fetchBusinesses(profile);
                 }}
-                className="mt-2 text-xs font-bold text-[#FF5A00]"
+                className="mt-2 text-xs font-bold text-primary"
               >
                 Save observations & retry
               </button>
@@ -301,7 +301,7 @@ export default function ExploreBusinesses() {
               </ul>
             )}
             <div className="flex flex-wrap justify-center gap-3">
-              <button onClick={() => setFilterCapital(false)} className="bg-[#FF5A00] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF8C00]">Remove budget filter</button>
+              <button onClick={() => setFilterCapital(false)} className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF8C00]">Remove budget filter</button>
               <button onClick={() => setFilterWorkType('')} className="bg-surface-container-high text-on-surface px-4 py-2 rounded-xl text-sm font-bold">Change category</button>
               <button onClick={() => setRadiusKm(radiusKm === 5 ? 10 : 20)} className="bg-surface-container-high text-on-surface px-4 py-2 rounded-xl text-sm font-bold">Increase radius</button>
               <button onClick={() => navigate('advisory')} className="bg-surface-container-high text-on-surface px-4 py-2 rounded-xl text-sm font-bold">Add more margin capital</button>
@@ -318,9 +318,9 @@ export default function ExploreBusinesses() {
                   onClick={() => isSelectable && toggleSelection(b.id)}
                   className={`bg-surface-container-low rounded-2xl border transition-all cursor-pointer overflow-hidden ${
                     isSelected
-                      ? 'border-[#FF5A00] shadow-[0_4px_20px_rgba(255,90,0,0.15)] ring-1 ring-[#FF5A00]'
+                      ? 'border-primary shadow-[0_4px_20px_rgb(var(--primary)/0.15)] ring-1 ring-primary'
                       : isSelectable
-                        ? 'border-outline-variant/10 hover:border-[#FF5A00]/50 hover:bg-surface-container'
+                        ? 'border-outline-variant/10 hover:border-primary/50 hover:bg-surface-container'
                         : 'border-outline-variant/5 opacity-60 cursor-not-allowed'
                   }`}
                 >
@@ -328,7 +328,7 @@ export default function ExploreBusinesses() {
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <h3 className="text-lg font-headline font-bold text-on-surface leading-tight">{b.name}</h3>
                       <div className={`shrink-0 w-5 h-5 rounded flex items-center justify-center border transition-colors ${
-                        isSelected ? 'bg-[#FF5A00] border-[#FF5A00] text-white' : 'border-outline-variant/30 text-transparent'
+                        isSelected ? 'bg-primary border-primary text-on-primary' : 'border-outline-variant/30 text-transparent'
                       }`}>
                         <span className="material-symbols-outlined text-[14px]">check</span>
                       </div>
@@ -337,12 +337,12 @@ export default function ExploreBusinesses() {
                     <div className="flex flex-wrap gap-2 mb-4">
                       <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant uppercase">{b.category}</span>
                       <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${
-                        b.competitorDensity === 'low' ? 'bg-emerald-500/15 text-emerald-400' :
-                        b.competitorDensity === 'medium' ? 'bg-amber-500/15 text-amber-400' :
-                        'bg-red-500/15 text-red-400'
+                        b.competitorDensity === 'low' ? 'bg-success/15 text-success' :
+                        b.competitorDensity === 'medium' ? 'bg-warning/15 text-warning' :
+                        'bg-error/15 text-error'
                       }`}>{b.competitorDensity} Competition · {b.competitorCount ?? '—'} listings</span>
                       {b.schemeSupported && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-[#FF5A00]/15 text-[#FF5A00] uppercase">Scheme match</span>
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-primary/15 text-primary uppercase">Scheme match</span>
                       )}
                     </div>
 
@@ -354,7 +354,7 @@ export default function ExploreBusinesses() {
                     <div className="grid grid-cols-2 gap-3 mb-4">
                       <div className="bg-surface-container rounded-lg p-2 border border-outline-variant/5">
                         <p className="text-[9px] text-on-surface-variant uppercase tracking-wider mb-0.5">Avg Revenue</p>
-                        <p className="text-sm font-bold text-[#00FFA3]">₹{((b.avgRevenue || 0) / 1000).toFixed(0)}k <span className="text-[10px] text-on-surface/50 font-normal">/mo</span></p>
+                        <p className="text-sm font-bold text-success">₹{((b.avgRevenue || 0) / 1000).toFixed(0)}k <span className="text-[10px] text-on-surface/50 font-normal">/mo</span></p>
                       </div>
                       <div className="bg-surface-container rounded-lg p-2 border border-outline-variant/5">
                         <p className="text-[9px] text-on-surface-variant uppercase tracking-wider mb-0.5">Startup cost</p>
@@ -377,7 +377,7 @@ export default function ExploreBusinesses() {
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); toggleSelection(b.id); }}
-                      className="mt-3 w-full text-xs font-bold py-2 rounded-lg border border-[#FF5A00]/30 text-[#FF5A00] hover:bg-[#FF5A00]/10"
+                      className="mt-3 w-full text-xs font-bold py-2 rounded-lg border border-primary/30 text-primary hover:bg-primary/10"
                     >
                       {isSelected ? 'Selected for compare' : 'Add to Compare'}
                     </button>

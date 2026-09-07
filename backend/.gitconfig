@@ -1,0 +1,14 @@
+[credential "https://huggingface.co"]
+	provider = generic
+[user]
+	name = Md Meraj Ansari
+	email = mdmeraj3500@gmail.com
+[http]
+	postBuffer = 1048576000
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+[core]
+	autocrlf = true

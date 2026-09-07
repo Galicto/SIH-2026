@@ -41,7 +41,7 @@ const Leaderboard: React.FC = () => {
             THE <span className="text-primary-container">ELITE</span> PULSE
           </h1>
           <p className="font-body text-lg text-on-surface-variant max-w-2xl opacity-80">
-            Live on-chain ranking of all wallets that have placed Arthniti bets on Algorand TestNet.
+            Live on-chain ranking of all wallets that have placed Vyapar-Mitra bets on Algorand TestNet.
           </p>
         </div>
 
@@ -204,7 +204,7 @@ const Leaderboard: React.FC = () => {
           {!leaderboardLoading && leaderboard.length > 0 && (
             <div className="p-6 bg-surface-container-lowest/50 text-center border-t border-outline-variant/10">
               <span className="font-label text-xs uppercase tracking-[0.3em] text-on-surface-variant">
-                {leaderboard.length} wallets ranked from on-chain Arthniti activity
+                {leaderboard.length} wallets ranked from on-chain Vyapar-Mitra activity
               </span>
             </div>
           )}

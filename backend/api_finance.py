@@ -23,7 +23,7 @@ async def calculate_finance(req: FinanceRequest):
         "scenarios": scenarios,
         "readiness": readiness,
         "provenance": {
-            "source": "Arthniti Backend Finance Engine",
+            "source": "Vyapar-Mitra Backend Finance Engine",
             "retrievedAt": timestamp,
             "confidence": "high",
             "dataType": "deterministic calculation"
@@ -114,7 +114,7 @@ async def financial_plan(req: FinancialPlanRequest):
         "message": msg,
         "source": {
             "retrievedAt": timestamp,
-            "name": "Arthniti Deterministic Engine"
+            "name": "Vyapar-Mitra Deterministic Engine"
         }
     }
 

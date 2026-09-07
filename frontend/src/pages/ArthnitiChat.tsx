@@ -112,8 +112,8 @@ export default function ArthnitiChat() {
         id: 'welcome',
         role: 'assistant',
         content: lang === 'hi'
-          ? 'नमस्ते! मैं अर्थनीति सहायक हूँ। मैं आपको ऋण योजनाओं, EMI गणना, व्यावसायिक जोखिमों और पात्रता के बारे में मदद कर सकता हूँ। कृपया पूछें!'
-          : 'Hello! I\'m the Arthniti Assistant. I can help you understand loan schemes, EMI calculations, business risks, and eligibility using your saved location and discovery data. Feel free to ask!',
+          ? 'नमस्ते! मैं व्यापार-मित्र सहायक हूँ। मैं आपको ऋण योजनाओं, EMI गणना, व्यावसायिक जोखिमों और पात्रता के बारे में मदद कर सकता हूँ। कृपया पूछें!'
+          : 'Hello! I\'m the Vyapar-Mitra Assistant. I can help you understand loan schemes, EMI calculations, business risks, and eligibility using your saved location and discovery data. Feel free to ask!',
         timestamp: new Date(),
       }]);
     }
@@ -185,12 +185,12 @@ export default function ArthnitiChat() {
 
   return (
     <DashboardLayout>
-      <PanelErrorBoundary fallbackMessage="Arthniti Assistant could not load.">
+      <PanelErrorBoundary fallbackMessage="Vyapar-Mitra Assistant could not load.">
       <div className="px-4 md:px-8 pb-12 md:pb-8 pt-4 max-w-4xl mx-auto flex flex-col" style={{ height: 'calc(100vh - 8rem)' }}>
         <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#FF5A00] to-[#FF8C00] flex items-center justify-center shadow-[0_0_20px_rgba(255,90,0,0.3)]">
-              <span className="material-symbols-outlined text-white text-xl">smart_toy</span>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary to-[#FF8C00] flex items-center justify-center shadow-[0_0_20px_rgb(var(--primary)/0.3)]">
+              <span className="material-symbols-outlined text-on-primary text-xl">smart_toy</span>
             </div>
             <div>
               <h1 className="text-lg font-headline font-bold text-on-surface">{t('chat.title')}</h1>
@@ -204,7 +204,7 @@ export default function ArthnitiChat() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => navigate('explore')}
-              className="text-[10px] font-bold text-[#FF5A00] px-2 py-1 rounded-lg hover:bg-[#FF5A00]/10"
+              className="text-[10px] font-bold text-primary px-2 py-1 rounded-lg hover:bg-primary/10"
             >
               Explore
             </button>
@@ -226,7 +226,7 @@ export default function ArthnitiChat() {
             <div className="flex flex-wrap justify-center gap-2">
               <button
                 onClick={checkHealth}
-                className="bg-[#FF5A00]/10 text-[#FF5A00] px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF5A00]/20"
+                className="bg-primary/10 text-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-primary/20"
               >
                 Retry
               </button>
@@ -256,7 +256,7 @@ export default function ArthnitiChat() {
                 <button
                   key={i}
                   onClick={() => handleSend(q)}
-                  className="bg-on-surface/5 border border-on-surface/10 text-on-surface/70 px-3 py-2 rounded-xl text-xs font-body hover:bg-[#FF5A00]/10 hover:border-[#FF5A00]/20 hover:text-[#FF5A00] transition-all"
+                  className="bg-on-surface/5 border border-on-surface/10 text-on-surface/70 px-3 py-2 rounded-xl text-xs font-body hover:bg-primary/10 hover:border-primary/20 hover:text-primary transition-all"
                 >
                   {q}
                 </button>
@@ -270,7 +270,7 @@ export default function ArthnitiChat() {
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] md:max-w-[70%] p-4 rounded-2xl text-sm font-body leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white rounded-br-md'
+                  ? 'bg-gradient-to-r from-primary to-[#FF8C00] text-on-primary rounded-br-md'
                   : 'bg-on-surface/5 border border-on-surface/10 text-on-surface/80 rounded-bl-md'
               }`}>
                 {msg.role === 'user' ? (
@@ -280,7 +280,7 @@ export default function ArthnitiChat() {
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                 )}
-                <div className={`text-[9px] mt-2 ${msg.role === 'user' ? 'text-white/50' : 'text-on-surface/30'}`}>
+                <div className={`text-[9px] mt-2 ${msg.role === 'user' ? 'text-on-primary/50' : 'text-on-surface/30'}`}>
                   {msg.timestamp.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
@@ -291,9 +291,9 @@ export default function ArthnitiChat() {
             <div className="flex justify-start">
               <div className="bg-on-surface/5 border border-on-surface/10 p-4 rounded-2xl rounded-bl-md flex items-center gap-2">
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 rounded-full bg-[#FF5A00] animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 rounded-full bg-[#FF5A00] animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 rounded-full bg-[#FF5A00] animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
                 <span className="text-xs text-on-surface/40 font-body">{t('chat.thinking')}</span>
               </div>
@@ -313,13 +313,13 @@ export default function ArthnitiChat() {
               onKeyDown={e => e.key === 'Enter' && handleSend()}
               placeholder={chatDisabled ? 'Chat unavailable' : t('chat.placeholder')}
               disabled={isThinking || chatDisabled}
-              className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-2xl px-5 py-4 text-sm font-body focus:border-[#FF5A00]/50 focus:ring-1 focus:ring-[#FF5A00]/20 focus:outline-none transition-colors disabled:opacity-50 pr-12"
+              className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-2xl px-5 py-4 text-sm font-body focus:border-primary/50 focus:ring-1 focus:ring-primary/20 focus:outline-none transition-colors disabled:opacity-50 pr-12"
             />
           </div>
           <button
             onClick={() => handleSend()}
             disabled={!input.trim() || isThinking || chatDisabled}
-            className="w-12 h-12 rounded-2xl bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white flex items-center justify-center hover:shadow-[0_0_20px_rgba(255,90,0,0.3)] transition-all active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            className="w-12 h-12 rounded-2xl bg-gradient-to-r from-primary to-[#FF8C00] text-on-primary flex items-center justify-center hover:shadow-[0_0_20px_rgb(var(--primary)/0.3)] transition-all active:scale-90 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
           >
             <span className="material-symbols-outlined">send</span>
           </button>

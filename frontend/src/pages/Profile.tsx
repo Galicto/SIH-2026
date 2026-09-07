@@ -195,7 +195,7 @@ export default function Profile() {
         <div className={cardCls}>
           <h3 className={sectionTitle}>About</h3>
           <div className="space-y-2 text-sm text-on-surface/40 font-body">
-            <div className="flex justify-between py-1"><span>Platform</span><span className="text-on-surface/70">Arthniti</span></div>
+            <div className="flex justify-between py-1"><span>Platform</span><span className="text-on-surface/70">Vyapar-Mitra</span></div>
             <div className="flex justify-between py-1"><span>Network</span><span className="text-on-surface/70">Algorand Testnet</span></div>
             <div className="flex justify-between py-1"><span>Wallet</span><span className="text-on-surface/70">Pera Wallet</span></div>
             <div className="flex justify-between py-1"><span>ALGO Rate</span><span className="text-[#2962FF] font-medium">₹{ALGO_TO_INR.toLocaleString()} / ALGO</span></div>

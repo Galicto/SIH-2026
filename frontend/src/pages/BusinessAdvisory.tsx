@@ -85,6 +85,19 @@ export default function BusinessAdvisory() {
       return;
     }
 
+    // Show something immediately from the seeded district data, then enrich from the backend.
+    const districtFallback: LocationProfile = {
+      state: district.state,
+      district: district.name,
+      primarySectors: [district.mainEconomy],
+      population: district.population,
+      msmeDensity: 'medium',
+      confidence: 'medium',
+      lastUpdated: new Date().toISOString(),
+      isDemoData: true,
+    } as LocationProfile;
+    setLocationProfile(districtFallback);
+
     // Resolve real lat/lng via backend (Nominatim / known centroids)
     setIsLoadingLocation(true);
     try {
@@ -94,7 +107,10 @@ export default function BusinessAdvisory() {
         state: district.state,
         cityOrVillage: district.name,
       });
-      const res = await fetch(`${API_BASE_URL}/api/location/profile?${qs}`);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch(`${API_BASE_URL}/api/location/profile?${qs}`, { signal: ctrl.signal });
+      clearTimeout(timer);
       if (res.ok) {
         const data = await res.json();
         const coords = data.location?.coordinates || {};
@@ -117,29 +133,10 @@ export default function BusinessAdvisory() {
           lastUpdated: data.provenance?.retrievedAt || new Date().toISOString(),
           isDemoData: false,
         } as LocationProfile);
-      } else {
-        setLocationProfile({
-          state: district.state,
-          district: district.name,
-          primarySectors: [district.mainEconomy],
-          population: district.population,
-          msmeDensity: 'medium',
-          confidence: 'medium',
-          lastUpdated: new Date().toISOString(),
-          isDemoData: false,
-        });
       }
+      // non-OK response: keep the district fallback already shown
     } catch {
-      setLocationProfile({
-        state: district.state,
-        district: district.name,
-        primarySectors: [district.mainEconomy],
-        population: district.population,
-        msmeDensity: 'medium',
-        confidence: 'medium',
-        lastUpdated: new Date().toISOString(),
-        isDemoData: false,
-      });
+      // network error / timeout: keep the district fallback already shown
     } finally {
       setIsLoadingLocation(false);
     }
@@ -180,8 +177,8 @@ export default function BusinessAdvisory() {
       <div className="px-4 md:px-8 pb-12 md:pb-8 pt-4 max-w-4xl mx-auto">
         {/* Header */}
         <section className="mb-8">
-          <div className="bg-gradient-to-br from-[#FF5A00]/10 to-on-surface/5 backdrop-blur-xl p-6 md:p-10 rounded-3xl border border-[#FF5A00]/20 relative overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.3)]">
-            <div className="absolute right-0 top-0 w-96 h-96 bg-gradient-to-bl from-[#FF5A00]/15 to-transparent rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3"></div>
+          <div className="bg-gradient-to-br from-primary/10 to-on-surface/5 backdrop-blur-xl p-6 md:p-10 rounded-3xl border border-primary/20 relative overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.3)]">
+            <div className="absolute right-0 top-0 w-96 h-96 bg-gradient-to-bl from-primary/15 to-transparent rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3"></div>
             <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <h1 className="text-3xl md:text-4xl font-headline font-bold text-on-surface mb-2">
@@ -209,13 +206,13 @@ export default function BusinessAdvisory() {
           <div className="bg-on-surface/5 backdrop-blur-xl p-6 rounded-2xl border border-on-surface/10 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
             <div className="flex items-center justify-between mb-4">
               <label className="text-sm font-body font-semibold text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-[#FF5A00]">my_location</span>
+                <span className="material-symbols-outlined text-[18px] text-primary">my_location</span>
                 Set Location Profile
               </label>
               <button
                 onClick={handleGetCurrentLocation}
                 disabled={isLoadingLocation}
-                className="flex items-center gap-1.5 text-xs font-bold text-[#FF5A00] bg-[#FF5A00]/10 px-3 py-1.5 rounded-full hover:bg-[#FF5A00]/20 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-full hover:bg-primary/20 transition-colors disabled:opacity-50"
               >
                 <span className={`material-symbols-outlined text-[14px] ${isLoadingLocation ? 'animate-spin' : ''}`}>
                   {isLoadingLocation ? 'progress_activity' : 'explore'}
@@ -235,7 +232,7 @@ export default function BusinessAdvisory() {
                     setManualBlock('');
                     setLocationProfile(null);
                   }}
-                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none cursor-pointer"
+                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-primary/50 focus:outline-none cursor-pointer"
                 >
                   <option value="">Select State</option>
                   {uniqueStates.map(state => (
@@ -246,7 +243,7 @@ export default function BusinessAdvisory() {
                   value={manualDistrictId}
                   onChange={e => handleManualDistrictChange(e.target.value)}
                   disabled={!manualState}
-                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none cursor-pointer disabled:opacity-50"
+                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-primary/50 focus:outline-none cursor-pointer disabled:opacity-50"
                 >
                   <option value="">Select District</option>
                   {availableDistricts.map(d => (
@@ -259,7 +256,7 @@ export default function BusinessAdvisory() {
                   value={manualBlock}
                   onChange={e => setManualBlock(e.target.value)}
                   disabled={!manualDistrictId}
-                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none cursor-pointer disabled:opacity-50"
+                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-primary/50 focus:outline-none cursor-pointer disabled:opacity-50"
                 >
                   <option value="">Select Block</option>
                   <option value="Block A">Block A</option>
@@ -272,13 +269,13 @@ export default function BusinessAdvisory() {
                   value={manualVillage}
                   onChange={e => setManualVillage(e.target.value)}
                   disabled={!manualDistrictId}
-                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none disabled:opacity-50"
+                  className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-primary/50 focus:outline-none disabled:opacity-50"
                 />
               </div>
             </div>
 
             {errors.location && (
-              <p className="text-red-400 text-xs font-body mb-4">{errors.location}</p>
+              <p className="text-error text-xs font-body mb-4">{errors.location}</p>
             )}
 
             {/* Location Profile Card */}
@@ -286,7 +283,7 @@ export default function BusinessAdvisory() {
               <div className="bg-surface-container rounded-xl p-4 border border-outline-variant/10 mt-4 animate-fade-in">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-emerald-400 text-[18px]">verified</span>
+                    <span className="material-symbols-outlined text-success text-[18px]">verified</span>
                     <h4 className="text-sm font-bold text-on-surface">
                       {manualVillage ? `${manualVillage}, ` : ''}{manualBlock ? `${manualBlock}, ` : ''}{locationProfile.district}, {locationProfile.state}
                     </h4>
@@ -314,7 +311,7 @@ export default function BusinessAdvisory() {
           {/* Margin Capital */}
           <div className="bg-on-surface/5 backdrop-blur-xl p-6 rounded-2xl border border-on-surface/10 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
             <label className="block text-sm font-body font-semibold text-on-surface mb-3 flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px] text-[#FF5A00]">account_balance_wallet</span>
+              <span className="material-symbols-outlined text-[18px] text-primary">account_balance_wallet</span>
               Available Margin Capital
             </label>
             <p className="text-[10px] text-on-surface/50 mb-3">How much of your own savings can you invest initially?</p>
@@ -326,11 +323,11 @@ export default function BusinessAdvisory() {
                 onChange={e => { setMarginCapital(e.target.value); setErrors(prev => ({ ...prev, margin: '' })); }}
                 placeholder="e.g. 50000"
                 min="0"
-                className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl pl-10 pr-4 py-3 text-sm font-headline font-bold focus:border-[#FF5A00]/50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl pl-10 pr-4 py-3 text-sm font-headline font-bold focus:border-primary/50 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
             {errors.margin && (
-              <p className="text-red-400 text-xs mt-2 font-body flex items-center gap-1">
+              <p className="text-error text-xs mt-2 font-body flex items-center gap-1">
                 <span className="material-symbols-outlined text-[14px]">error</span>
                 {errors.margin}
               </p>
@@ -344,7 +341,7 @@ export default function BusinessAdvisory() {
               className="flex items-center justify-between w-full text-left"
             >
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-[#FF5A00]">person_add</span>
+                <span className="material-symbols-outlined text-[18px] text-primary">person_add</span>
                 <span className="text-sm font-body font-semibold text-on-surface">Build Detailed Profile (Optional)</span>
               </div>
               <span className="material-symbols-outlined text-on-surface/50 transition-transform" style={{ transform: showMore ? 'rotate(180deg)' : 'rotate(0)' }}>
@@ -360,7 +357,7 @@ export default function BusinessAdvisory() {
                   <select
                     value={socialCategory}
                     onChange={e => setSocialCategory(e.target.value)}
-                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-primary/50 focus:outline-none"
                   >
                     <option value="">Select</option>
                     <option value="SC">SC</option>
@@ -374,7 +371,7 @@ export default function BusinessAdvisory() {
                   <select
                     value={gender}
                     onChange={e => setGender(e.target.value)}
-                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-primary/50 focus:outline-none"
                   >
                     <option value="">Select</option>
                     <option value="Female">Female</option>
@@ -384,11 +381,11 @@ export default function BusinessAdvisory() {
                 </div>
                 <div className="col-span-1 md:col-span-2 flex items-center justify-between gap-4 bg-on-surface/5 p-3 rounded-xl border border-on-surface/5">
                   <div className="flex items-center gap-2">
-                    <input type="checkbox" id="artisan" checked={isArtisan} onChange={e => setIsArtisan(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-[#FF5A00]" />
+                    <input type="checkbox" id="artisan" checked={isArtisan} onChange={e => setIsArtisan(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-primary" />
                     <label htmlFor="artisan" className="text-sm cursor-pointer">I am a traditional artisan / craftsperson</label>
                   </div>
                   <div className="flex items-center gap-2">
-                    <input type="checkbox" id="shg" checked={isSHGMember} onChange={e => setIsSHGMember(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-[#FF5A00]" />
+                    <input type="checkbox" id="shg" checked={isSHGMember} onChange={e => setIsSHGMember(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-primary" />
                     <label htmlFor="shg" className="text-sm cursor-pointer">I am part of an SHG</label>
                   </div>
                 </div>
@@ -399,7 +396,7 @@ export default function BusinessAdvisory() {
           {/* Explore CTA */}
           <button
             onClick={handleExplore}
-            className="w-full bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white font-headline font-bold py-4 px-8 rounded-2xl text-base hover:shadow-[0_0_30px_rgba(255,90,0,0.3)] transition-all active:scale-[0.98] flex items-center justify-center gap-3"
+            className="w-full bg-gradient-to-r from-primary to-[#FF8C00] text-on-primary font-headline font-bold py-4 px-8 rounded-2xl text-base hover:shadow-[0_0_30px_rgb(var(--primary)/0.3)] transition-all active:scale-[0.98] flex items-center justify-center gap-3"
           >
             Explore Business Opportunities
             <span className="material-symbols-outlined">arrow_forward</span>

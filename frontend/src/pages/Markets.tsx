@@ -340,7 +340,7 @@ const Markets: React.FC = () => {
           </div>
           <div className="flex items-center gap-4">
             <span className="px-3 py-1 bg-primary-container/10 text-primary-container text-[11px] font-bold rounded-full">Algorand TestNet</span>
-            <span className="text-on-surface-variant text-xs">© 2024 Arthniti Terminal</span>
+            <span className="text-on-surface-variant text-xs">© 2024 Vyapar-Mitra Terminal</span>
           </div>
         </footer>
       </div>

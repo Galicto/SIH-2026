@@ -24,3 +24,12 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+// ElevenLabs ConvAI web component (script loaded in index.html)
+declare namespace JSX {
+  interface IntrinsicElements {
+    'elevenlabs-convai': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+      'agent-id'?: string
+    }
+  }
+}

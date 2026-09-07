@@ -40,13 +40,13 @@ export default function LocalOpportunities() {
             <span className="material-symbols-outlined text-4xl text-on-surface/40 mb-3">location_off</span>
             <h3 className="text-lg font-bold text-on-surface mb-2">Location Not Set</h3>
             <p className="text-sm text-on-surface/60 mb-6">We need your location to show relevant local opportunities.</p>
-            <button onClick={() => navigate('advisory')} className="bg-[#FF5A00] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF8C00]">Set Location</button>
+            <button onClick={() => navigate('advisory')} className="bg-primary text-on-primary px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF8C00]">Set Location</button>
           </div>
         ) : (
           <div className="space-y-8">
             <div className="bg-surface-container border border-outline-variant/10 p-6 rounded-2xl">
               <div className="flex items-center gap-3 mb-4">
-                <span className="material-symbols-outlined text-[#FF5A00] text-2xl">storefront</span>
+                <span className="material-symbols-outlined text-primary text-2xl">storefront</span>
                 <h2 className="text-xl font-headline font-bold text-on-surface">Business Opportunities</h2>
               </div>
               <p className="text-sm text-on-surface/70 mb-4">
@@ -58,7 +58,7 @@ export default function LocalOpportunities() {
               ) : businessOpps.length === 0 ? (
                 <div className="bg-on-surface/5 p-4 rounded-xl">
                   <p className="text-sm text-on-surface/70 mb-3">No discovery results in this session yet.</p>
-                  <button onClick={() => navigate('explore')} className="text-xs text-[#FF5A00] font-bold hover:underline">Run Explore Businesses →</button>
+                  <button onClick={() => navigate('explore')} className="text-xs text-primary font-bold hover:underline">Run Explore Businesses →</button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -69,7 +69,7 @@ export default function LocalOpportunities() {
                       <p className="text-[10px] text-on-surface/40">
                         Source: {b.provenance?.source || meta?.provider || 'OpenStreetMap'} · {new Date(b.provenance?.retrievedAt || retrievedAt).toLocaleString('en-IN')}
                       </p>
-                      <button onClick={() => navigate('explore')} className="mt-2 text-xs text-[#FF5A00] font-bold hover:underline">Explore Businesses →</button>
+                      <button onClick={() => navigate('explore')} className="mt-2 text-xs text-primary font-bold hover:underline">Explore Businesses →</button>
                     </div>
                   ))}
                 </div>
@@ -78,20 +78,20 @@ export default function LocalOpportunities() {
 
             <div className="bg-surface-container border border-outline-variant/10 p-6 rounded-2xl">
               <div className="flex items-center gap-3 mb-4">
-                <span className="material-symbols-outlined text-[#FF5A00] text-2xl">school</span>
+                <span className="material-symbols-outlined text-primary text-2xl">school</span>
                 <h2 className="text-xl font-headline font-bold text-on-surface">Training & entrepreneurship support</h2>
               </div>
               <div className="space-y-3">
                 <div className="bg-on-surface/5 p-4 rounded-xl">
                   <h3 className="text-sm font-bold text-on-surface mb-1">PM Vishwakarma — skill training & toolkit</h3>
                   <p className="text-xs text-on-surface/60 mb-2">Official programme for traditional artisans and craftspeople.</p>
-                  <a href="https://pmvishwakarma.gov.in/" target="_blank" rel="noreferrer" className="text-xs text-[#FF5A00] font-bold">pmvishwakarma.gov.in</a>
+                  <a href="https://pmvishwakarma.gov.in/" target="_blank" rel="noreferrer" className="text-xs text-primary font-bold">pmvishwakarma.gov.in</a>
                   <p className="text-[10px] text-on-surface/40 mt-1">Source: Ministry of MSME · verified official URL</p>
                 </div>
                 <div className="bg-on-surface/5 p-4 rounded-xl">
                   <h3 className="text-sm font-bold text-on-surface mb-1">PMMY / MUDRA — self-employment credit</h3>
                   <p className="text-xs text-on-surface/60 mb-2">Collateral-free micro credit for non-farm micro enterprises.</p>
-                  <a href="https://www.mudra.org.in/" target="_blank" rel="noreferrer" className="text-xs text-[#FF5A00] font-bold">mudra.org.in</a>
+                  <a href="https://www.mudra.org.in/" target="_blank" rel="noreferrer" className="text-xs text-primary font-bold">mudra.org.in</a>
                   <p className="text-[10px] text-on-surface/40 mt-1">Source: Ministry of Finance · verified official URL</p>
                 </div>
               </div>
@@ -100,14 +100,14 @@ export default function LocalOpportunities() {
             <div className="bg-surface-container border border-outline-variant/10 p-6 rounded-2xl">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <span className="material-symbols-outlined text-[#FF5A00] text-2xl">work</span>
+                  <span className="material-symbols-outlined text-primary text-2xl">work</span>
                   <h2 className="text-xl font-headline font-bold text-on-surface">Jobs</h2>
                 </div>
                 <span className="bg-on-surface/10 text-on-surface/60 px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider">Not connected</span>
               </div>
               <div className="bg-on-surface/5 border border-outline-variant/10 p-4 rounded-xl">
                 <p className="text-sm text-on-surface/80 leading-relaxed">
-                  Live job listings are not connected. Arthniti is currently showing business opportunities based on local market signals.
+                  Live job listings are not connected. Vyapar-Mitra is currently showing business opportunities based on local market signals.
                 </p>
                 <p className="text-[10px] text-on-surface/40 mt-2">
                   No job-board scraping. Approved job APIs can be added when credentials and legal access exist.

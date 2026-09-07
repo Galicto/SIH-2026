@@ -17,7 +17,7 @@ const FAQS = [
   },
   {
     q: 'Is real money involved?',
-    a: 'No. Arthniti runs entirely on Algorand TestNet. The ALGO used is test currency with no real-world value. You can get free TestNet ALGO from the Algorand faucet.',
+    a: 'No. Vyapar-Mitra runs entirely on Algorand TestNet. The ALGO used is test currency with no real-world value. You can get free TestNet ALGO from the Algorand faucet.',
   },
   {
     q: 'How do I get TestNet ALGO?',
@@ -25,7 +25,7 @@ const FAQS = [
   },
   {
     q: 'What is the AI Analyzer on the Dashboard?',
-    a: 'The Arthniti AI Core uses advanced neural models to analyze your portfolio, market sentiment, and provide optimized resource allocation suggestions in real-time.',
+    a: 'The Vyapar-Mitra AI Core uses advanced neural models to analyze your portfolio, market sentiment, and provide optimized resource allocation suggestions in real-time.',
   },
   {
     q: 'Can I view my trade history?',
@@ -184,14 +184,14 @@ const Support: React.FC = () => {
                     <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-surface-container-low animate-pulse" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-on-surface">Arthniti AI Assistant</h3>
+                    <h3 className="text-sm font-bold text-on-surface">Vyapar-Mitra AI Assistant</h3>
                     <p className="text-[10px] text-primary-container font-bold">Powered by ElevenLabs · Online</p>
                   </div>
                 </div>
               </div>
               <div className="p-5">
                 <p className="text-sm text-on-surface-variant mb-4 leading-relaxed">
-                  Talk to our AI voice assistant for instant help. Ask about wallet setup, market predictions, trading features, or anything about Arthniti.
+                  Talk to our AI voice assistant for instant help. Ask about wallet setup, market predictions, trading features, or anything about Vyapar-Mitra.
                 </p>
 
                 {/* Feature Tags */}

@@ -32,7 +32,7 @@ export function generatePDFReport(input: PDFInput): void {
   doc.setTextColor(255, 90, 0);
   doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
-  doc.text('ARTHNITI', margin, 18);
+  doc.text('VYAPAR-MITRA', margin, 18);
   doc.setFontSize(10);
   doc.setTextColor(220, 220, 220);
   doc.text('Viability Passport — Business & Financial Plan', margin, 26);
@@ -206,5 +206,5 @@ export function generatePDFReport(input: PDFInput): void {
   const disclaimer = `DISCLAIMER: This Viability Passport is an advisory tool generated based on demo/representative data for SIH. It does not constitute official approval, loan guarantee, or formal eligibility for any government scheme. Financial projections are indicative. Please verify all scheme rules with the official portal or your local bank branch.`;
   doc.text(disclaimer, margin, y, { maxWidth: contentWidth, align: 'justify' });
 
-  doc.save('Arthniti_Viability_Passport.pdf');
+  doc.save('Vyapar-Mitra_Viability_Passport.pdf');
 }

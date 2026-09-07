@@ -5,6 +5,7 @@ import pickle
 import tempfile
 import uuid
 import socket
+import asyncio
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,21 +13,21 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Dict, List, Any
 
-# torch / transformers power only the DistilBERT expense-description classifier
-# (/api/upload-expenses and a fallback in /api/save-app-transactions). They are NOT
-# part of the Arthniti advisory flow. Loaded lazily so uvicorn can start — and the
-# rest of the API can run — without the heavy ML stack installed. See _load_classifier().
+import torch
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
 
-try:
-    import ollama  # optional local-LLM fallback for the finance-tracker endpoints
-except ImportError:
-    ollama = None
-
+import ollama
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OLLAMA_MODEL = "llama3.1:latest" # Using the model user has installed
 
-import ai_client  # single entry point for all LLM calls (routes through OpenRouter)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')  # Headless backend for server charts
@@ -37,21 +38,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
-import api_location
-import api_business
-import api_schemes
-import api_ai
-import api_finance
-import api_feasibility
-
 app = FastAPI(title="Arthniti AI Expense Classifier & PDF Engine", version="1.2")
-
-app.include_router(api_location.router, prefix="/api/location", tags=["location"])
-app.include_router(api_business.router, prefix="/api/business", tags=["business"])
-app.include_router(api_schemes.router, prefix="/api/schemes", tags=["schemes"])
-app.include_router(api_finance.router, prefix="/api/finance", tags=["finance"])
-app.include_router(api_ai.router, prefix="/api/ai", tags=["ai"])
-app.include_router(api_feasibility.router, prefix="/api/feasibility", tags=["feasibility"])
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,108 +48,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api/health")
-async def health_check():
-    import datetime
-    return {
-        "status": "ok",
-        "service": "backend",
-        "lastCheckedAt": datetime.datetime.now().isoformat()
-    }
+class AIProxyRequest(BaseModel):
+    prompt: str
+    temperature: float = 0.7
+    max_tokens: int = 1024
 
-@app.get("/api/ai/health")
-async def ai_health_check():
-    """Validate the AI provider (OpenRouter) config + reachability. Never expose secrets."""
-    import concurrent.futures
-    _model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
+@app.post("/api/ai-proxy")
+async def ai_proxy(payload: AIProxyRequest):
+    """Unified AI proxy that prefers local Ollama over Gemini"""
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(api_ai.probe_gemini)
-            result = future.result(timeout=18)
-    except concurrent.futures.TimeoutError:
-        import datetime
-        result = {
-            "status": "unavailable",
-            "provider": "openrouter",
-            "model": _model,
-            "checkedAt": datetime.datetime.now().isoformat(),
-            "safeReason": "provider_timeout"
-        }
-    except Exception as e:
-        import datetime
-        print(f"AI health endpoint error: {type(e).__name__}")
-        result = {
-            "status": "unavailable",
-            "provider": "openrouter",
-            "model": _model,
-            "checkedAt": datetime.datetime.now().isoformat(),
-            "safeReason": "network_failure"
-        }
-    return result
+        # Try Ollama First
+        res = ollama.chat(model=OLLAMA_MODEL, messages=[{"role": "user", "content": payload.prompt}])
+        return {"text": res['message']['content']}
+    except Exception as ollama_err:
+        print(f"Ollama Proxy Error: {ollama_err}")
+        # Fallback to Gemini if key is available
+        if GEMINI_API_KEY:
+            try:
+                model_gemini = genai.GenerativeModel("models/gemini-flash-latest")
+                response = model_gemini.generate_content(payload.prompt)
+                return {"text": response.text}
+            except Exception as gemini_err:
+                raise HTTPException(status_code=500, detail=f"Both Ollama and Gemini failed. Gemini error: {gemini_err}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Ollama failed and no Gemini API key found. Ollama error: {ollama_err}")
 
-@app.get("/api/providers/health")
-async def providers_health():
-    import datetime
-    import os
-    ai_key = os.getenv("OPENROUTER_API_KEY")
-    maps_key = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
-    ts = datetime.datetime.now().isoformat()
-    ai_status = "connected" if (ai_key and len(ai_key.strip()) > 10) else "not_configured"
-    # Prefer cached probe if available
-    cached = getattr(api_ai, "_last_ai_health", None) or {}
-    if cached.get("status"):
-        ai_status = cached["status"]
-    return {
-        "ai": {
-            "status": ai_status,
-            "provider": "openrouter",
-            "lastCheckedAt": cached.get("checkedAt") or ts,
-            "safeMessage": cached.get("safeReason") or "",
-        },
-        "geocoding": {
-            "status": "connected",
-            "provider": "OpenStreetMap Nominatim",
-            "lastCheckedAt": ts
-        },
-        "business": {
-            "status": "connected" if maps_key else "fallback_osm",
-            "provider": "Google Places API" if maps_key else "OpenStreetMap Overpass API",
-            "mapsKeyConfigured": bool(maps_key),
-            "lastCheckedAt": ts
-        },
-        "schemes": {
-            "status": "connected",
-            "provider": "Official curated scheme rules (mudra.org.in, pmvishwakarma.gov.in)",
-            "lastCheckedAt": ts
-        },
-        "jobs": {
-            "status": "not_configured",
-            "provider": "none",
-            "safeMessage": "Live job listings are not connected. Vyapar-Mitra is currently showing business opportunities based on local market signals.",
-            "lastCheckedAt": ts
-        },
-        "datasets": {
-            "status": "connected",
-            "provider": "Vyapar-Mitra Finance Engine",
-            "lastCheckedAt": ts
-        }
-    }
 
 # -------------------------------------------------------------
 # 1. SETUP CLASSIFIER MODEL
 # -------------------------------------------------------------
-# Robust path for Hugging Face deployment or local structure 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 
-# The model folder is in the project root
-MODEL_DIR = os.path.join(PROJECT_ROOT, "model")
-if not os.path.exists(MODEL_DIR):
-    # Fallback to local BASE_DIR if running standalone
-    MODEL_DIR = BASE_DIR
-
-MODEL_WEIGHTS = os.path.join(MODEL_DIR, "model.safetensors")
-LABEL_ENCODER_PATH = os.path.join(MODEL_DIR, "label_encoder.pkl")
+# The fine-tuned model directory (contains config.json, model.safetensors, tokenizer files)
+TXN_MODEL_DIR = BASE_DIR
+# The label encoder from training
+LABEL_ENCODER_PATH = os.path.join(BASE_DIR, "label_encoder.pkl")
 
 
 print("Initializing AI Categories...")
@@ -171,63 +92,32 @@ try:
         le = pickle.load(f)
         classes = list(le.classes_)
     CATEGORY_MAP = {i: v for i, v in enumerate(classes)}
+    print(f"Loaded {len(CATEGORY_MAP)} categories: {list(CATEGORY_MAP.values())}")
 except Exception as e:
     print("Error loading category map:", e)
     CATEGORY_MAP = {}
 
-# Lazily-loaded DistilBERT expense classifier. _clf["ok"] is None until first use,
-# then True/False. When False (torch/transformers missing or weights absent), the
-# predict_* helpers degrade to "Unknown" instead of crashing.
-_clf = {"ok": None, "torch": None, "tokenizer": None, "model": None}
-
-def _load_classifier() -> bool:
-    if _clf["ok"] is not None:
-        return _clf["ok"]
-    print("Initializing AI Model (lazy)...")
-    try:
-        import torch
-        from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast, DistilBertConfig
-        from safetensors.torch import load_file
-
-        has_local = (os.path.exists(os.path.join(MODEL_DIR, "config.json"))
-                     and os.path.exists(MODEL_WEIGHTS))
-
-        if has_local:
-            # Full fine-tuned checkpoint sitting in MODEL_DIR — load it directly.
-            tok_src = MODEL_DIR if os.path.exists(os.path.join(MODEL_DIR, "tokenizer.json")) else "distilbert-base-uncased"
-            tokenizer = DistilBertTokenizerFast.from_pretrained(tok_src)
-            model = DistilBertForSequenceClassification.from_pretrained(MODEL_DIR)
-        else:
-            # Weights only — rebuild config from the base model.
-            tokenizer = DistilBertTokenizerFast.from_pretrained("distilbert-base-uncased")
-            config = DistilBertConfig.from_pretrained("distilbert-base-uncased", num_labels=max(len(CATEGORY_MAP), 13))
-            model = DistilBertForSequenceClassification(config)
-            model.load_state_dict(load_file(MODEL_WEIGHTS), strict=False)
-
-        model.eval()
-        _clf.update(ok=True, torch=torch, tokenizer=tokenizer, model=model)
-        print(f"PyTorch AI Model loaded (local={has_local}, categories={len(CATEGORY_MAP)})")
-    except Exception as e:
-        _clf["ok"] = False
-        print(f"Expense classifier unavailable (torch/transformers not installed or weights missing): {e}")
-    return _clf["ok"]
+print("Initializing AI Model...")
+try:
+    # Load the fine-tuned model and tokenizer directly from the saved model directory
+    # This uses the correct config.json, tokenizer, and weights from training
+    tokenizer = DistilBertTokenizerFast.from_pretrained(TXN_MODEL_DIR)
+    model = DistilBertForSequenceClassification.from_pretrained(TXN_MODEL_DIR, num_labels=13)
+    model.eval()
+    print(f"PyTorch AI Model loaded successfully from: {TXN_MODEL_DIR}")
+except Exception as e:
+    print("Error loading model:", e)
 
 def predict_category(text: str) -> str:
     if not text.strip(): return "Unknown"
-    if not _load_classifier(): return "Unknown"
-    torch = _clf["torch"]
-    inputs = _clf["tokenizer"](text, return_tensors="pt", truncation=True, padding=True)
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
     with torch.no_grad():
-        outputs = _clf["model"](**inputs)
+        outputs = model(**inputs)
     return CATEGORY_MAP.get(outputs.logits.argmax().item(), "Unknown")
 
 def predict_categories_batch(texts: List[str], batch_size: int = 128) -> List[str]:
     """Processes large arrays of text simultaneously leveraging PyTorch vectorization"""
     if not texts: return []
-    if not _load_classifier():
-        return ["Unknown"] * len(texts)
-    torch = _clf["torch"]
-    tokenizer, model = _clf["tokenizer"], _clf["model"]
     results = []
     for i in range(0, len(texts), batch_size):
         batch = [t if t.strip() else "Empty" for t in texts[i:i + batch_size]]
@@ -235,7 +125,7 @@ def predict_categories_batch(texts: List[str], batch_size: int = 128) -> List[st
         with torch.no_grad():
             logits = model(**inputs).logits
         preds = logits.argmax(dim=-1).tolist()
-
+        
         for idx, p in enumerate(preds):
             if batch[idx] == "Empty":
                 results.append("Unknown")
@@ -261,7 +151,7 @@ def draw_header_footer(canvas, doc):
     canvas.rect(0, h - 50, w, 50, fill=1, stroke=0)
     canvas.setFillColor(colors.white)
     canvas.setFont("Helvetica-Bold", 14)
-    canvas.drawString(MARGIN, h - 32, "Vyapar-Mitra Financial Analysis Report")
+    canvas.drawString(MARGIN, h - 32, "Arthniti Financial Analysis Report")
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(colors.HexColor("#AAAAAA"))
     canvas.drawRightString(w - MARGIN, h - 32, "Confidential AI Analysis")
@@ -273,7 +163,7 @@ def draw_header_footer(canvas, doc):
     canvas.line(MARGIN, 38, w - MARGIN, 38)
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(TEXT_MUTED)
-    canvas.drawString(MARGIN, 24, "Generated by Vyapar-Mitra Behavioral AI")
+    canvas.drawString(MARGIN, 24, "Generated by Arthniti Behavioral AI")
     canvas.drawRightString(w - MARGIN, 24, f"Page {doc.page}")
     canvas.restoreState()
 
@@ -303,20 +193,6 @@ def sanitize_currency(text: str) -> str:
     text = _re.sub(r'INR\s+INR', 'INR', text)
     return text
 
-
-def _llm_text(prompt: str) -> str:
-    """Plain-text completion for the finance-tracker endpoints: OpenRouter (ai_client)
-    first, local Ollama as an offline fallback. Raises if both are unavailable."""
-    try:
-        text, _ = ai_client.ai_complete(prompt)
-        return text.strip()
-    except Exception as e:
-        print(f"[ai_client] {type(e).__name__}: {e} — falling back to Ollama")
-        if ollama is None:
-            raise
-        res = ollama.chat(model="llama3.2", messages=[{"role": "user", "content": prompt}])
-        return res["message"]["content"].strip()
-
 # -------------------------------------------------------------
 # 3. ENDPOINTS
 # -------------------------------------------------------------
@@ -336,12 +212,38 @@ async def upload_expenses(file: UploadFile = File(...)):
     reader = csv.reader(io.StringIO(decoded))
     
     rows_data = []
-    headers = next(reader, None) # skip header
+    headers = next(reader, None)  # read header row
+    if not headers:
+        raise HTTPException(status_code=400, detail="CSV file is empty or has no header row.")
+    
+    # Normalize headers to lowercase for flexible matching
+    normalized_headers = [h.strip().lower() for h in headers]
+    
+    # Find column indices by name (flexible — works with any column order)
+    desc_idx = None
+    amt_idx = None
+    date_idx = None
+    for i, h in enumerate(normalized_headers):
+        if h in ("description", "desc", "narration", "particulars", "details"):
+            desc_idx = i
+        elif h in ("amount", "amt", "value", "debit", "credit"):
+            amt_idx = i
+        elif h in ("date", "txn_date", "transaction_date", "txn date"):
+            date_idx = i
+    
+    # Fallback to positional if no matching headers found
+    if desc_idx is None:
+        desc_idx = 1 if len(headers) > 1 else 0
+    if amt_idx is None:
+        amt_idx = 2 if len(headers) > 2 else 0
+    if date_idx is None:
+        date_idx = 0
+    
     for row in reader:
         if not row: continue
-        desc = row[1] if len(row) > 1 else row[0]
-        amt = row[2] if len(row) > 2 else "0"
-        date = row[0] if len(row) > 0 else "Unknown"
+        desc = row[desc_idx].strip() if len(row) > desc_idx else ""
+        amt = row[amt_idx].strip() if len(row) > amt_idx else "0"
+        date = row[date_idx].strip() if len(row) > date_idx and date_idx != desc_idx else "Unknown"
         rows_data.append({"date": date, "description": desc, "amount": amt})
         
     descriptions = [r["description"] for r in rows_data]
@@ -360,7 +262,7 @@ class AppCsvRequest(BaseModel):
 @app.post("/api/save-app-transactions")
 async def save_app_transactions(payload: AppCsvRequest):
     # Save the CSV string to the requested file
-    transactions_path = os.path.join(MODEL_DIR, "transactions.csv")
+    transactions_path = os.path.join(BASE_DIR, "transactions.csv")
     with open(transactions_path, "w", encoding="utf-8") as f:
         f.write(payload.csv_data)
         
@@ -396,10 +298,20 @@ RULES — follow strictly:
 - EVERY single bullet point absolutely MUST include an exact numerical figure (e.g. INR amounts or percentages) to back up its claim. Be highly quantitative.
 - Topics: (1) Largest spend category, (2) Leakage pattern, (3) Actionable advice, (4) Savings recommendation."""
     try:
-        return {"summary": sanitize_currency(_llm_text(prompt))}
+        # Try Gemini first if API key is present (best for production)
+        if GEMINI_API_KEY:
+            model_gemini = genai.GenerativeModel("models/gemini-flash-latest")
+            response = model_gemini.generate_content(prompt)
+            return {"summary": sanitize_currency(response.text.strip())}
+            
+        # Fallback to Ollama (local dev)
+        res = ollama.chat(model=OLLAMA_MODEL, messages=[{"role": "user", "content": prompt}])
+        raw = res['message']['content']
+        cleaned = sanitize_currency(raw)
+        return {"summary": cleaned}
     except Exception as e:
         print(f"LLM Error: {e}")
-        return {"summary": "Could not fetch AI summary. Please check OPENROUTER_API_KEY or that Ollama is running."}
+        return {"summary": "Could not fetch AI summary. Please check if GEMINI_API_KEY is set or Ollama is running."}
 
 
 class GoalPlannerRequest(BaseModel):
@@ -548,7 +460,15 @@ async def goal_planner(payload: GoalPlannerRequest):
             f"and need INR {med_sip:,.0f}/month SIP. Mention specific Indian instruments. "
             f"Use INR not $ or pound. Be concise, no bullet points, just flowing advice."
         )
-        narrative = sanitize_currency(_llm_text(narrative_prompt))
+        # Try Gemini
+        if GEMINI_API_KEY:
+            model_gemini = genai.GenerativeModel("models/gemini-flash-latest")
+            response = model_gemini.generate_content(narrative_prompt)
+            narrative = sanitize_currency(response.text.strip())
+        else:
+            # Fallback to Ollama
+            res = ollama.chat(model=OLLAMA_MODEL, messages=[{"role": "user", "content": narrative_prompt}])
+            narrative = sanitize_currency(res['message']['content'].strip())
     except Exception as e:
         print(f"Goal Narrative Error: {e}")
         narrative = (
@@ -571,71 +491,8 @@ async def goal_planner(payload: GoalPlannerRequest):
     }
 
 
-class ExpenseImpactRequest(BaseModel):
-    expenseAmount: float
-    expenseDescription: str
-    goals: List[Dict[str, Any]] = []
-
-@app.post("/api/expense-impact")
-async def expense_impact(payload: ExpenseImpactRequest):
-    import math
-
-    amount = payload.expenseAmount
-    description = payload.expenseDescription
-    goals = payload.goals
-
-    # Build goals context for prompt
-    goals_context = "\n".join([
-        f"- {g.get('title', 'Goal')} ({g.get('category', 'General')}): "
-        f"Target INR {g.get('targetAmount', 0):,.0f}, "
-        f"Saved INR {g.get('currentSavings', 0):,.0f}, "
-        f"Deadline: {g.get('targetDate', 'N/A')}, "
-        f"Priority: {g.get('priority', 'medium')}"
-        for g in goals
-    ]) if goals else "No active goals recorded."
-
-    prompt = f"""You are a highly analytical quantitative financial advisor working in INDIA. Return a purely data-driven, numbers-heavy analysis.
-The user wants to spend INR {amount:,.0f} on "{description}".
-
-User's active goals:
-{goals_context}
-
-Your response must focus strictly on numbers, percentages, and metrics. Do NOT use long narrative text or fluff.
-1. Calculate the exact percentage impact of this INR {amount:,.0f} expense against the target amount of the highest priority goal.
-2. Estimate the mathematical delay (in weeks or months) this causes for their top goals.
-3. Show the opportunity cost: what would INR {amount:,.0f} turn into if invested at 12% APY over 5 years?
-Use bullet points. Start lines with numbers or metrics. Keep it under 150 words. Do not use markdown headers.
-All currency must be in INR. Do NOT use $, USD, EUR or any other currency."""
-
-    try:
-        return {"analysis": sanitize_currency(_llm_text(prompt))}
-    except Exception as e:
-        print(f"Expense Impact AI Error: {e}")
-        # Provide a mathematical fallback when no AI is available
-        opp_cost = amount * ((1 + 0.12) ** 5)
-        top_goal = goals[0] if goals else None
-        fallback_lines = [
-            f"Proposed expense: INR {amount:,.0f} on \"{description}\"",
-        ]
-        if top_goal:
-            target = float(top_goal.get('targetAmount', 0))
-            saved = float(top_goal.get('currentSavings', 0))
-            remaining = max(0, target - saved)
-            pct = (amount / target * 100) if target > 0 else 0
-            pct_remaining = (amount / remaining * 100) if remaining > 0 else 0
-            fallback_lines.append(f"Impact on \"{top_goal.get('title', 'Top Goal')}\": INR {amount:,.0f} = {pct:.1f}% of target (INR {target:,.0f})")
-            fallback_lines.append(f"Consumes {pct_remaining:.1f}% of remaining amount needed (INR {remaining:,.0f})")
-            if remaining > 0:
-                monthly_save = remaining / 24
-                delay_months = amount / monthly_save if monthly_save > 0 else 0
-                fallback_lines.append(f"Estimated delay: ~{delay_months:.1f} months on current savings pace")
-        fallback_lines.append(f"Opportunity cost: INR {amount:,.0f} invested at 12% APY for 5 years = INR {opp_cost:,.0f}")
-        fallback_lines.append(f"Net cost of spending: INR {opp_cost - amount:,.0f} in lost growth")
-
-        return {"analysis": "\n".join(fallback_lines)}
 
 
-@app.post("/api/generate-pdf")
 
 
 
@@ -647,7 +504,7 @@ async def generate_pdf(payload: PdfRequestPayload):
     if not totals: raise HTTPException(status_code=400, detail="No category data provided.")
     
     tmp_path = tempfile.mkdtemp()
-    pdf_filename = f"Vyapar-Mitra_Report_{uuid.uuid4().hex[:6]}.pdf"
+    pdf_filename = f"Arthniti_Report_{uuid.uuid4().hex[:6]}.pdf"
     pdf_path = os.path.join(tmp_path, pdf_filename)
     donut_path = os.path.join(tmp_path, "donut.png")
     line_path = os.path.join(tmp_path, "line.png")
@@ -773,21 +630,60 @@ async def generate_pdf(payload: PdfRequestPayload):
         story.append(tbl2)
 
     doc.build(story)
-    return FileResponse(pdf_path, filename="Vyapar-Mitra_Behavioral_Report.pdf", media_type="application/pdf")
+    return FileResponse(pdf_path, filename="Arthniti_Behavioral_Report.pdf", media_type="application/pdf")
 
-@app.on_event("startup")
-async def validate_ai_config_on_startup():
-    """Validate AI provider configuration at boot — never print secrets."""
-    key = os.getenv("OPENROUTER_API_KEY")
-    model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
-    if not key or len(key.strip()) < 10:
-        print("[startup] AI provider: NOT CONFIGURED (OPENROUTER_API_KEY missing)")
-    else:
-        print(f"[startup] AI provider: openrouter configured (model={model}, key_len={len(key.strip())})")
-    maps = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
-    print(f"[startup] Maps/Places: {'configured' if maps else 'not configured — using OSM Overpass'}")
-    print("[startup] Jobs provider: not configured — business signals only")
+# -------------------------------------------------------------
+# TTS – Natural-sounding Text-to-Speech using Edge TTS (free)
+# Supports English (Indian) and Hindi Neural voices
+# -------------------------------------------------------------
+import edge_tts
+from fastapi.responses import StreamingResponse
 
+class TTSRequest(BaseModel):
+    text: str
+    lang: str = "en"  # "en" for English, "hi" for Hindi
+
+# Premium Microsoft Neural voices — sound very human
+TTS_VOICES = {
+    "en": "en-IN-NeerjaNeural",       # Indian English female (natural)
+    "en-male": "en-IN-PrabhatNeural",  # Indian English male
+    "hi": "hi-IN-SwaraNeural",         # Hindi female (natural)
+    "hi-male": "hi-IN-MadhurNeural",   # Hindi male
+}
+
+@app.post("/api/tts")
+async def text_to_speech(payload: TTSRequest):
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided.")
+    
+    voice = TTS_VOICES.get(payload.lang, TTS_VOICES["en"])
+    
+    # Generate speech audio in memory
+    communicate = edge_tts.Communicate(text, voice, rate="+0%", pitch="+0Hz")
+    audio_buffer = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_buffer.write(chunk["data"])
+    
+    audio_buffer.seek(0)
+    return StreamingResponse(
+        audio_buffer,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline; filename=speech.mp3"}
+    )
+
+@app.get("/api/tts-voices")
+async def list_voices():
+    """List available TTS voices for the frontend UI"""
+    return {
+        "voices": [
+            {"id": "en", "name": "Neerja (English - Indian)", "lang": "en-IN"},
+            {"id": "en-male", "name": "Prabhat (English - Indian)", "lang": "en-IN"},
+            {"id": "hi", "name": "Swara (Hindi)", "lang": "hi-IN"},
+            {"id": "hi-male", "name": "Madhur (Hindi)", "lang": "hi-IN"},
+        ]
+    }
 
 if __name__ == "__main__":
     import uvicorn
