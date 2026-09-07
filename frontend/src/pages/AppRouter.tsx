@@ -14,8 +14,6 @@ import Support from './Support';
 import Analysis from './Analysis';
 import Education from './Education';
 import Goals from './Goals';
-import Transactions from './Transactions';
-import WealthOverview from './WealthOverview';
 // ── Arthniti pages ────────────────────────────────────────────────────────────
 import BusinessAdvisory from './BusinessAdvisory';
 import FeasibilityReport from './FeasibilityReport';
@@ -68,14 +66,10 @@ const AppRouter: React.FC = () => {
     // ── Finance pages ─────────────────────────────────────────────────────────
     case 'analysis':
       return <Analysis />;
-    case 'wealth':
-      return <WealthOverview />;
     case 'education':
       return <Education />;
     case 'goals':
       return <Goals />;
-    case 'transactions':
-      return <Transactions />;
     // ── Arthniti pages ────────────────────────────────────────────────────────
     case 'advisory':
       return <BusinessAdvisory />;

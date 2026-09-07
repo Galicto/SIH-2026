@@ -2,6 +2,7 @@ import { SupportedWallet, WalletId, WalletManager, WalletProvider, NetworkId } f
 import { SnackbarProvider, closeSnackbar } from 'notistack'
 import { PredXProvider } from './context/PredXContext'
 import { AnalysisProvider } from './context/AnalysisContext'
+import { AdvisoryProvider } from './context/AdvisoryContext'
 import AppRouter from './pages/AppRouter'
 
 const supportedWallets: SupportedWallet[] = [
@@ -32,9 +33,11 @@ export default function App() {
     >
       <WalletProvider manager={walletManager}>
         <PredXProvider>
-          <AnalysisProvider>
-            <AppRouter />
-          </AnalysisProvider>
+          <AdvisoryProvider>
+            <AnalysisProvider>
+              <AppRouter />
+            </AnalysisProvider>
+          </AdvisoryProvider>
         </PredXProvider>
       </WalletProvider>
     </SnackbarProvider>

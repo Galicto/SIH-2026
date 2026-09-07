@@ -1,9 +1,136 @@
+"""One transparent financial-planning model for advisory, feasibility and passport views.
+
+The default is an indicative lender-neutral plan. It is only replaced when a
+matched scheme supplies published, applicable credit terms. A plan is never
+blocked merely because a scheme (such as PMMY) leaves rate and tenure to the
+lender.
+"""
+
+DEFAULT_ANNUAL_INTEREST_RATE = 12.0
+DEFAULT_TENURE_MONTHS = 36
+
+
 def calculate_emi(principal: float, annual_rate: float, tenure_months: int) -> float:
     if tenure_months <= 0: return 0
     r = annual_rate / 100 / 12
     if r == 0: return principal / tenure_months
     factor = (1 + r) ** tenure_months
     return (principal * r * factor) / (factor - 1)
+
+
+def _money(value) -> float:
+    try:
+        return max(0.0, float(value or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def select_credit_terms(required_credit: float, scheme_matches: list | None = None) -> dict:
+    """Select verified terms only when they cover this exact first-stage credit need."""
+    for match in scheme_matches or []:
+        terms = (match or {}).get("financeTerms") or {}
+        interest_rate = _money(terms.get("annualInterestRate"))
+        tenure_months = int(_money(terms.get("tenureMonths")))
+        max_credit = _money(terms.get("maxCredit"))
+        if interest_rate and tenure_months and max_credit and required_credit <= max_credit:
+            return {
+                "annualInterestRate": interest_rate,
+                "tenureMonths": tenure_months,
+                "termSource": "published_scheme_terms",
+                "schemeId": (match or {}).get("schemeId"),
+                "schemeName": (match or {}).get("name"),
+                "termNote": terms.get("note") or "Published scheme terms; lender approval and eligibility still apply.",
+                "officialUrl": (match or {}).get("officialUrl"),
+            }
+
+    return {
+        "annualInterestRate": DEFAULT_ANNUAL_INTEREST_RATE,
+        "tenureMonths": DEFAULT_TENURE_MONTHS,
+        "termSource": "planning_assumption",
+        "schemeId": None,
+        "schemeName": None,
+        "termNote": "Indicative planning assumption only. The lender sets final rate and tenure unless verified scheme terms apply.",
+        "officialUrl": None,
+    }
+
+
+def build_business_financial_plan(
+    project_cost: float,
+    applicant_margin: float,
+    monthly_revenue: float,
+    monthly_operating_cost: float,
+    household_expenses: float = 0,
+    scheme_matches: list | None = None,
+) -> dict:
+    """Return the canonical reducing-balance plan used across the advisory flow."""
+    project_cost = _money(project_cost)
+    stated_margin = _money(applicant_margin)
+    applicant_margin = min(stated_margin, project_cost)
+    monthly_revenue = _money(monthly_revenue)
+    monthly_operating_cost = _money(monthly_operating_cost)
+    household_expenses = _money(household_expenses)
+
+    if project_cost <= 0:
+        return {
+            "status": "incomplete",
+            "financials": {},
+            "validationErrors": ["A positive startup project cost is required."],
+            "message": "Financial plan unavailable because the selected business has no startup-cost estimate.",
+            "assumptions": {},
+        }
+
+    required_credit = max(0.0, project_cost - applicant_margin)
+    terms = select_credit_terms(required_credit, scheme_matches)
+    annual_rate = terms["annualInterestRate"]
+    tenure_months = terms["tenureMonths"]
+    monthly_emi = calculate_emi(required_credit, annual_rate, tenure_months)
+    operating_surplus = monthly_revenue - monthly_operating_cost
+    monthly_surplus = operating_surplus - household_expenses
+    emi_to_surplus = (monthly_emi / monthly_surplus * 100) if monthly_surplus > 0 else (100.0 if monthly_emi > 0 else 0.0)
+
+    if required_credit <= 0:
+        readiness, message = 100, "Your stated margin capital covers the estimated startup cost; no credit is assumed."
+    elif monthly_surplus <= 0:
+        readiness, message = 0, "Projected revenue does not cover operating and stated household costs before EMI."
+    elif emi_to_surplus <= 35:
+        readiness, message = 90, "Projected monthly surplus comfortably covers the estimated EMI."
+    elif emi_to_surplus <= 50:
+        readiness, message = 70, "Projected monthly surplus covers the estimated EMI, but the repayment buffer is limited."
+    elif emi_to_surplus <= 80:
+        readiness, message = 40, "Estimated EMI is high relative to projected monthly surplus; reduce capital need or improve margin."
+    else:
+        readiness, message = 20, "Estimated EMI exceeds a safe share of projected monthly surplus."
+
+    total_repayment = monthly_emi * tenure_months
+    return {
+        "status": "ready",
+        "financials": {
+            "projectCost": round(project_cost),
+            "applicantMargin": round(applicant_margin),
+            "unallocatedMargin": round(max(0.0, stated_margin - project_cost)),
+            "requiredCredit": round(required_credit),
+            "annualInterestRate": annual_rate,
+            "tenureMonths": tenure_months,
+            "monthlyEmi": round(monthly_emi),
+            "monthlyRevenue": round(monthly_revenue),
+            "monthlyOperatingCost": round(monthly_operating_cost),
+            "householdExpenses": round(household_expenses),
+            "operatingSurplus": round(operating_surplus),
+            "monthlySurplus": round(monthly_surplus),
+            "emiToSurplusRatio": round(emi_to_surplus, 1),
+            "repaymentReadinessScore": readiness,
+            "totalRepayment": round(total_repayment),
+            "totalInterest": round(max(0.0, total_repayment - required_credit)),
+        },
+        "terms": terms,
+        "validationErrors": [],
+        "message": message,
+        "assumptions": {
+            "projectCost": "Uses the selected business's minimum estimated startup capital.",
+            "surplus": "Monthly revenue minus operating cost and the household expenses stated in your advisory profile.",
+            "emi": "Reducing-balance EMI on the required credit for the shown annual rate and tenure. It is an estimate, not a loan offer.",
+        },
+    }
 
 def calculate_financials(margin_capital: float) -> dict:
     # Scheme Definitions

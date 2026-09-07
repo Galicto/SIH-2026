@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@algorandfoundation/algokit-client-generator": "^5.0.0",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^18.17.14",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
@@ -34,6 +35,7 @@
     "assert": "^2.1.0",
     "daisyui": "^4.0.0",
     "jspdf": "^4.2.1",
+    "leaflet": "^1.9.4",
     "lightweight-charts": "^5.1.0",
     "lucide-react": "^0.576.0",
     "lute-connect": "^1.6.2",
@@ -41,6 +43,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-leaflet": "^4.2.1",
     "react-markdown": "^10.1.0",
     "tslib": "^2.6.2",
     "zod": "^4.5.4"

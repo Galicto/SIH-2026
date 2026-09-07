@@ -48,10 +48,8 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   ];
 
   const financeItems = [
-    { id: 'wealth',       label: 'Wealth Hub',   icon: 'account_balance' },
     { id: 'analysis',     label: 'Analysis',     icon: 'analytics' },
     { id: 'goals',        label: 'Goals',        icon: 'flag' },
-    { id: 'transactions', label: 'Transactions', icon: 'receipt_long' },
     { id: 'education',    label: 'Education',    icon: 'school' },
   ];
 

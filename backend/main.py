@@ -68,19 +68,21 @@ async def health_check():
     }
 
 @app.get("/api/ai/health")
-async def ai_health_check():
-    """Validate OpenRouter config + reachability. Never expose secrets."""
+async def ai_health_check(source: str = "gemini"):
+    """Validate a selected AI provider config + reachability. Never expose secrets."""
+    if source not in {"gemini", "openrouter", "ollama", "ollama_cloud"}:
+        raise HTTPException(status_code=422, detail="source must be gemini, openrouter, ollama, or ollama_cloud")
     import concurrent.futures
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(api_ai.probe_gemini)
+            future = pool.submit(api_ai.probe_ai, source)
             result = future.result(timeout=18)
     except concurrent.futures.TimeoutError:
         import datetime
         result = {
             "status": "unavailable",
-            "provider": "openrouter",
-            "model": "google/gemini-2.5-flash",
+            "provider": source,
+            "model": None,
             "checkedAt": datetime.datetime.now().isoformat(),
             "safeReason": "provider_timeout"
         }
@@ -89,8 +91,8 @@ async def ai_health_check():
         print(f"AI health endpoint error: {type(e).__name__}")
         result = {
             "status": "unavailable",
-            "provider": "openrouter",
-            "model": "google/gemini-2.5-flash",
+            "provider": source,
+            "model": None,
             "checkedAt": datetime.datetime.now().isoformat(),
             "safeReason": "network_failure"
         }
@@ -100,18 +102,17 @@ async def ai_health_check():
 async def providers_health():
     import datetime
     import os
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
-    maps_key = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
+    gemini_key = os.getenv("GEMINI_API_KEY")
     ts = datetime.datetime.now().isoformat()
-    ai_status = "connected" if (openrouter_key and len(openrouter_key) > 10) else "not_configured"
-    # Prefer cached probe if available
-    cached = getattr(api_ai, "_last_ai_health", None) or {}
+    ai_status = "connected" if (gemini_key and len(gemini_key) > 10) else "not_configured"
+    # Prefer the cached Gemini probe because it is the default chat provider.
+    cached = (getattr(api_ai, "_last_ai_health", None) or {}).get("gemini", {})
     if cached.get("status"):
         ai_status = cached["status"]
     return {
         "ai": {
             "status": ai_status,
-            "provider": "openrouter",
+            "provider": "gemini",
             "lastCheckedAt": cached.get("checkedAt") or ts,
             "safeMessage": cached.get("safeReason") or "",
         },
@@ -121,9 +122,9 @@ async def providers_health():
             "lastCheckedAt": ts
         },
         "business": {
-            "status": "connected" if maps_key else "fallback_osm",
-            "provider": "Google Places API" if maps_key else "OpenStreetMap Overpass API",
-            "mapsKeyConfigured": bool(maps_key),
+            "status": "connected",
+            "provider": "OpenStreetMap Overpass API",
+            "sourceMode": "free_osm_default",
             "lastCheckedAt": ts
         },
         "schemes": {
@@ -761,8 +762,7 @@ async def validate_ai_config_on_startup():
         print("[startup] AI provider: NOT CONFIGURED (GEMINI_API_KEY missing)")
     else:
         print(f"[startup] AI provider: gemini configured (model={model}, key_len={len(key)})")
-    maps = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
-    print(f"[startup] Maps/Places: {'configured' if maps else 'not configured — using OSM Overpass'}")
+    print("[startup] Local opportunities: OpenStreetMap Nominatim + Overpass (free default)")
     print("[startup] Jobs provider: not configured — business signals only")
 
 

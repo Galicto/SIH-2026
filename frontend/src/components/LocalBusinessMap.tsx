@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
+import { Circle, CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { LocationProfile, BusinessItem } from '../providers/types';
 
 interface LocalBusinessMapProps {
@@ -6,91 +8,95 @@ interface LocalBusinessMapProps {
   business: BusinessItem;
 }
 
+type MapCenter = [number, number];
+
+function MapViewUpdater({ center }: { center: MapCenter }) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(center, Math.max(map.getZoom(), 13), { animate: true });
+  }, [center, map]);
+
+  return null;
+}
+
+const asFiniteNumber = (value: unknown): number | null => {
+  const number = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
 export default function LocalBusinessMap({ location, business }: LocalBusinessMapProps) {
-  // A stylized abstract map to represent the geo-data safely without relying on paid APIs
+  const center = useMemo<MapCenter | null>(() => {
+    const latitude = asFiniteNumber(location.latitude ?? location.coordinates?.lat);
+    const longitude = asFiniteNumber(location.longitude ?? location.coordinates?.lng);
+    if (latitude === null || longitude === null || (latitude === 0 && longitude === 0)) return null;
+    return [latitude, longitude];
+  }, [location.coordinates?.lat, location.coordinates?.lng, location.latitude, location.longitude]);
 
-  const competitors = business.competitorDensity === 'high' ? 8 : business.competitorDensity === 'medium' ? 4 : 1;
+  const radiusKm = Math.max(1, Math.min(20, Number(business.radiusKm) || 5));
+  const locationName = location.cityOrVillage || location.village || location.block || location.district || 'Selected location';
+  const competitorLabel = business.competitorCount == null
+    ? `${business.competitorDensity || 'Unknown'} competition`
+    : `${business.competitorCount} mapped competitor${business.competitorCount === 1 ? '' : 's'} · ${business.competitorDensity || 'unknown'} density`;
 
-  // Generate some random positions for competitors and demand anchors around the center
-  const generateNodes = (count: number, type: 'competitor' | 'demand') => {
-    return Array.from({ length: count }).map((_, i) => ({
-      id: `${type}-${i}`,
-      top: 20 + Math.random() * 60, // 20% to 80%
-      left: 10 + Math.random() * 80, // 10% to 90%
-      type,
-    }));
-  };
-
-  const compNodes = generateNodes(competitors, 'competitor');
-  const demandNodes = generateNodes(5, 'demand');
-  const allNodes = [...compNodes, ...demandNodes];
+  if (!center) {
+    return (
+      <div className="rounded-2xl border border-outline-variant/10 bg-surface-container p-8 text-center">
+        <span className="material-symbols-outlined mb-3 block text-4xl text-on-surface/35">map</span>
+        <h3 className="font-headline text-lg font-bold text-on-surface">Map needs a valid location</h3>
+        <p className="mx-auto mt-2 max-w-md text-sm text-on-surface/60">
+          Add or update the address in Business Advisory, then generate the report again to open an interactive map.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full bg-surface-container rounded-2xl border border-outline-variant/10 overflow-hidden relative" style={{ minHeight: '400px' }}>
-      
-      {/* Map Overlay Pattern */}
-      <div className="absolute inset-0 opacity-10" style={{
-        backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)',
-        backgroundSize: '20px 20px'
-      }}></div>
-
-      <div className="absolute top-4 left-4 z-10 bg-surface-container-high/90 backdrop-blur p-3 rounded-xl border border-outline-variant/20 shadow-lg text-xs">
-        <h4 className="font-bold text-on-surface mb-2">{location.village || location.block || location.district} Radius</h4>
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow"></span>
-          <span className="text-on-surface-variant">Proposed Location</span>
-        </div>
-        <div className="flex items-center gap-2 mb-1.5">
-          <span className="w-3 h-3 rounded bg-red-500 border border-white shadow"></span>
-          <span className="text-on-surface-variant">Estimated Competitors ({competitors})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full border-2 border-[#00FFA3] bg-[#00FFA3]/20 shadow"></span>
-          <span className="text-on-surface-variant">Demand Anchors (Markets, Schools)</span>
-        </div>
-      </div>
-      
-      {/* Center Node */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
-        <div className="relative">
-          <div className="absolute -inset-4 bg-blue-500/20 rounded-full animate-ping"></div>
-          <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow-[0_0_15px_rgba(59,130,246,0.8)] z-10 relative"></div>
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-surface-container-highest px-2 py-1 rounded text-[10px] font-bold text-on-surface whitespace-nowrap shadow-md">
-            Your Proposed Site
-          </div>
-        </div>
-      </div>
-
-      {/* 5km Radius Circle */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] rounded-full border border-blue-500/20 bg-blue-500/5 z-0">
-      </div>
-      {/* 10km Radius Circle */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] rounded-full border border-blue-500/10 z-0">
-      </div>
-
-      {/* Plotted Nodes */}
-      {allNodes.map(node => (
-        <div 
-          key={node.id}
-          className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
-          style={{ top: `${node.top}%`, left: `${node.left}%` }}
+    <div className="relative h-[430px] w-full overflow-hidden rounded-2xl border border-outline-variant/10 bg-surface-container">
+      <MapContainer
+        center={center}
+        zoom={13}
+        minZoom={3}
+        scrollWheelZoom
+        className="h-full w-full"
+        aria-label={`Interactive OpenStreetMap centered on ${locationName}`}
+      >
+        <MapViewUpdater center={center} />
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <Circle
+          center={center}
+          radius={radiusKm * 1000}
+          pathOptions={{ color: '#FF5A00', fillColor: '#FF5A00', fillOpacity: 0.08, weight: 2 }}
+        />
+        <CircleMarker
+          center={center}
+          radius={9}
+          pathOptions={{ color: '#ffffff', fillColor: '#2563eb', fillOpacity: 1, weight: 3 }}
         >
-          {node.type === 'competitor' ? (
-            <div className="w-3 h-3 rounded bg-red-500 border border-white/50 shadow-md tooltip-trigger relative group">
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-surface-container-highest px-2 py-1 rounded text-[9px] text-on-surface opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                Estimated {business.name} competitor
-              </div>
-            </div>
-          ) : (
-            <div className="w-3 h-3 rounded-full border border-[#00FFA3] bg-[#00FFA3]/20 shadow-md"></div>
-          )}
-        </div>
-      ))}
+          <Popup>
+            <strong>Proposed business area</strong><br />
+            {locationName}<br />
+            {radiusKm} km feasibility radius
+          </Popup>
+        </CircleMarker>
+      </MapContainer>
 
-      <div className="absolute bottom-4 right-4 text-[10px] text-on-surface/40 bg-surface-container-high/80 px-2 py-1 rounded backdrop-blur border border-outline-variant/10">
-        Representative Data • Not to scale
+      <div className="pointer-events-none absolute left-4 top-4 z-[500] max-w-[245px] rounded-xl border border-outline-variant/25 bg-surface-container-high/95 p-3 text-xs shadow-lg backdrop-blur">
+        <h4 className="mb-1 font-bold text-on-surface">{locationName}</h4>
+        <p className="text-on-surface/65">Interactive 2D OpenStreetMap</p>
+        <div className="mt-2 space-y-1.5 text-on-surface-variant">
+          <p><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-blue-600 ring-2 ring-white" />Proposed site</p>
+          <p><span className="mr-2 inline-block h-2.5 w-2.5 rounded-full border border-[#FF5A00] bg-[#FF5A00]/25" />{radiusKm} km study area</p>
+          <p>{competitorLabel}</p>
+        </div>
       </div>
 
+      <div className="pointer-events-none absolute bottom-7 right-4 z-[500] max-w-[290px] rounded-lg bg-surface-container-high/95 px-3 py-2 text-[10px] text-on-surface/65 shadow backdrop-blur">
+        Pan, zoom, and tap the blue marker. Competition is shown as a report aggregate; no estimated businesses are plotted as real locations.
+      </div>
     </div>
   );
 }

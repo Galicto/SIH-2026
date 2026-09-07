@@ -1,16 +1,33 @@
-"""
-Business discovery & comparison — live map providers + deterministic scoring.
-Primary: Google Places (if GOOGLE_MAPS_API_KEY set). Secondary: OSM Overpass.
-"""
+"""Business discovery & comparison using free OpenStreetMap providers only."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Tuple
 import datetime
-import os
 import math
 import requests
+import asyncio
+import time
+from collections import OrderedDict
+import finance_engine
+import scheme_matcher
 
 router = APIRouter()
+
+# Public providers need a conservative request rate. These bounded in-memory
+# caches remove repeat requests while keeping the underlying map data recent.
+COORDINATE_CACHE_TTL_SECONDS = 24 * 60 * 60
+MAP_SIGNAL_CACHE_TTL_SECONDS = 10 * 60
+MAP_SIGNAL_STALE_SECONDS = 6 * 60 * 60
+MAX_COORDINATE_CACHE_ENTRIES = 100
+MAX_MAP_SIGNAL_CACHE_ENTRIES = 80
+OVERPASS_QUERY_TIMEOUT_SECONDS = 18
+OVERPASS_REQUEST_TIMEOUT_SECONDS = 18
+OVERPASS_TOTAL_BUDGET_SECONDS = 25
+
+_coordinate_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_map_signal_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+_map_signal_inflight: Dict[str, asyncio.Task] = {}
+_map_signal_lock = asyncio.Lock()
 
 # ── Request models (accept both new + legacy shapes) ─────────────────────────
 
@@ -38,7 +55,10 @@ class ProfileBody(BaseModel):
     availability: Optional[str] = ""
     skillLevel: Optional[str] = ""
     workType: Optional[str] = ""
+    householdExpenses: Optional[float] = 0
     isArtisan: Optional[bool] = False
+    isSHGMember: Optional[bool] = False
+    isExistingEnterprise: Optional[bool] = False
     isWomenEnterprise: Optional[bool] = False
 
     class Config:
@@ -73,6 +93,7 @@ class CompareRequest(BaseModel):
     budget: float
     location: Optional[Dict[str, Any]] = None
     schemeMatches: Optional[List[dict]] = None
+    profile: Optional[Dict[str, Any]] = None
 
 
 # ── Category taxonomy queried from live providers ────────────────────────────
@@ -100,7 +121,31 @@ DEMAND_ANCHORS = {
 }
 
 
-def _resolve_coords(location: dict) -> tuple:
+def _coordinate_cache_get(key: str) -> Optional[Tuple[float, float, str]]:
+    entry = _coordinate_cache.get(key)
+    if not entry:
+        return None
+    age_seconds = time.monotonic() - entry["savedAt"]
+    if age_seconds > COORDINATE_CACHE_TTL_SECONDS:
+        _coordinate_cache.pop(key, None)
+        return None
+    _coordinate_cache.move_to_end(key)
+    return entry["lat"], entry["lon"], f"cache:{entry['source']}"
+
+
+def _coordinate_cache_put(key: str, lat: float, lon: float, source: str) -> None:
+    _coordinate_cache[key] = {
+        "lat": lat,
+        "lon": lon,
+        "source": source,
+        "savedAt": time.monotonic(),
+    }
+    _coordinate_cache.move_to_end(key)
+    while len(_coordinate_cache) > MAX_COORDINATE_CACHE_ENTRIES:
+        _coordinate_cache.popitem(last=False)
+
+
+async def _resolve_coords(location: dict) -> tuple:
     lat = location.get("latitude") or location.get("lat")
     lon = location.get("longitude") or location.get("lng")
     coords = location.get("coordinates") or {}
@@ -120,16 +165,23 @@ def _resolve_coords(location: dict) -> tuple:
     ]
     query = ", ".join([p for p in place_parts if p])
     if query.strip(", India"):
+        cache_key = f"forward:{query.casefold()}"
+        cached = _coordinate_cache_get(cache_key)
+        if cached:
+            return cached
         try:
-            resp = requests.get(
+            resp = await asyncio.to_thread(
+                requests.get,
                 "https://nominatim.openstreetmap.org/search",
                 params={"q": query, "format": "json", "limit": 1},
                 headers={"User-Agent": "ArthnitiBusinessDiscovery/1.0"},
-                timeout=12,
+                timeout=6,
             )
             if resp.ok and resp.json():
                 hit = resp.json()[0]
-                return float(hit["lat"]), float(hit["lon"]), f"nominatim:{query}"
+                resolved_lat, resolved_lon = float(hit["lat"]), float(hit["lon"])
+                _coordinate_cache_put(cache_key, resolved_lat, resolved_lon, "nominatim")
+                return resolved_lat, resolved_lon, f"nominatim:{query}"
         except Exception as e:
             print(f"Nominatim geocode error: {type(e).__name__}")
 
@@ -160,82 +212,20 @@ def _budget(req: DiscoverRequest) -> float:
     return 0.0
 
 
-# ── Live providers ───────────────────────────────────────────────────────────
-
-def query_google_places(lat: float, lon: float, radius_m: int) -> Dict[str, Any]:
-    api_key = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
-    if not api_key:
-        return {"ok": False, "reason": "not_configured", "elements": [], "provider": "google_places"}
-
-    # Nearby Search (legacy) — types covering our categories
-    types = [
-        "store", "supermarket", "restaurant", "cafe", "clothing_store",
-        "electronics_store", "beauty_salon", "car_repair", "bus_station",
-        "school", "hospital", "pharmacy", "bank", "laundry",
-    ]
-    elements = []
-    errors = 0
-    for t in types:
-        try:
-            resp = requests.get(
-                "https://maps.googleapis.com/maps/api/place/nearbysearch/json",
-                params={
-                    "location": f"{lat},{lon}",
-                    "radius": min(radius_m, 50000),
-                    "type": t,
-                    "key": api_key,
-                },
-                timeout=15,
-            )
-            data = resp.json()
-            status = data.get("status")
-            if status not in ("OK", "ZERO_RESULTS"):
-                errors += 1
-                continue
-            for p in data.get("results", []):
-                elements.append({
-                    "id": p.get("place_id"),
-                    "tags": {
-                        "name": p.get("name"),
-                        "amenity": t if t in ("school", "hospital", "bus_station", "cafe", "restaurant", "bank") else "",
-                        "shop": t if t not in ("school", "hospital", "bus_station", "cafe", "restaurant", "bank") else "",
-                        "source": "google_places",
-                        "types": p.get("types", []),
-                    },
-                    "lat": (p.get("geometry") or {}).get("location", {}).get("lat"),
-                    "lon": (p.get("geometry") or {}).get("location", {}).get("lng"),
-                })
-        except Exception as e:
-            errors += 1
-            print(f"Places API error ({t}): {type(e).__name__}")
-
-    if errors == len(types) and not elements:
-        return {"ok": False, "reason": "provider_error", "elements": [], "provider": "google_places"}
-
-    return {
-        "ok": True,
-        "reason": "ok",
-        "elements": elements,
-        "provider": "Google Places API",
-        "count": len(elements),
-    }
-
-
 def query_overpass(lat: float, lon: float, radius_meters: int) -> Dict[str, Any]:
-    # Cap query size for reliability; still covers required categories
+    """Fetch only the OSM tags used by Arthniti's deterministic ranking."""
     radius_meters = min(int(radius_meters), 20000)
     query = f"""
-    [out:json][timeout:30];
+    [out:json][timeout:{OVERPASS_QUERY_TIMEOUT_SECONDS}];
     (
-      node["shop"](around:{radius_meters},{lat},{lon});
-      way["shop"](around:{radius_meters},{lat},{lon});
+      node["shop"~"convenience|supermarket|grocery|general|dairy|cheese|copyshop|stationery|books|tailor|clothes|boutique|fabric|mobile_phone|electronics|computer|car_repair|motorcycle|agrarian|farm|garden_centre|rental|hardware|car|gift|art|beauty|hairdresser|cosmetics"](around:{radius_meters},{lat},{lon});
+      way["shop"~"convenience|supermarket|grocery|general|dairy|cheese|copyshop|stationery|books|tailor|clothes|boutique|fabric|mobile_phone|electronics|computer|car_repair|motorcycle|agrarian|farm|garden_centre|rental|hardware|car|gift|art|beauty|hairdresser|cosmetics"](around:{radius_meters},{lat},{lon});
       node["amenity"~"school|college|university|kindergarten|hospital|clinic|doctors|restaurant|cafe|fast_food|food_court|marketplace|bus_station|townhall|internet_cafe|taxi"](around:{radius_meters},{lat},{lon});
       way["amenity"~"school|college|university|hospital|clinic|marketplace|bus_station"](around:{radius_meters},{lat},{lon});
-      node["craft"](around:{radius_meters},{lat},{lon});
-      node["office"](around:{radius_meters},{lat},{lon});
+      node["craft"~"tailor|handicraft|pottery|jeweller|basket_maker"](around:{radius_meters},{lat},{lon});
       way["landuse"~"industrial|commercial|retail"](around:{radius_meters},{lat},{lon});
     );
-    out center tags 250;
+    out center tags 160;
     """
     headers = {
         "User-Agent": "ArthnitiBusinessDiscovery/1.0 (local-dev)",
@@ -248,10 +238,18 @@ def query_overpass(lat: float, lon: float, radius_meters: int) -> Dict[str, Any]
         "https://overpass.kumi.systems/api/interpreter",
     ]
     last_error = None
+    deadline = time.monotonic() + OVERPASS_TOTAL_BUDGET_SECONDS
     for overpass_url in mirrors:
+        remaining = deadline - time.monotonic()
+        if remaining <= 1:
+            last_error = "request_budget_exhausted"
+            break
         try:
             response = requests.post(
-                overpass_url, data={"data": query}, headers=headers, timeout=35
+                overpass_url,
+                data={"data": query},
+                headers=headers,
+                timeout=min(OVERPASS_REQUEST_TIMEOUT_SECONDS, remaining),
             )
             if response.status_code in (429, 504, 502, 406):
                 last_error = f"http_{response.status_code}"
@@ -278,6 +276,81 @@ def query_overpass(lat: float, lon: float, radius_meters: int) -> Dict[str, Any]
         "count": 0,
         "lastError": last_error,
     }
+
+
+def _signal_cache_key(lat: float, lon: float, radius_meters: int) -> str:
+    # Roughly 11 m precision prevents GPS jitter from defeating cache reuse.
+    return f"{lat:.4f}:{lon:.4f}:{int(radius_meters)}"
+
+
+def _copy_provider_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {**payload, "elements": list(payload.get("elements") or [])}
+
+
+def _store_map_signal(key: str, payload: Dict[str, Any]) -> None:
+    _map_signal_cache[key] = {"payload": _copy_provider_payload(payload), "savedAt": time.monotonic()}
+    _map_signal_cache.move_to_end(key)
+    while len(_map_signal_cache) > MAX_MAP_SIGNAL_CACHE_ENTRIES:
+        _map_signal_cache.popitem(last=False)
+
+
+def _cached_map_signal(key: str, max_age_seconds: float) -> Optional[Tuple[Dict[str, Any], int]]:
+    entry = _map_signal_cache.get(key)
+    if not entry:
+        return None
+    age_seconds = time.monotonic() - entry["savedAt"]
+    if age_seconds > max_age_seconds:
+        return None
+    _map_signal_cache.move_to_end(key)
+    return _copy_provider_payload(entry["payload"]), int(age_seconds)
+
+
+async def get_osm_signals(lat: float, lon: float, radius_meters: int) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Serve fresh cache, share duplicate work, and use a labelled stale fallback."""
+    key = _signal_cache_key(lat, lon, radius_meters)
+    cached = _cached_map_signal(key, MAP_SIGNAL_CACHE_TTL_SECONDS)
+    if cached:
+        payload, age_seconds = cached
+        return payload, {"cacheStatus": "fresh", "cacheAgeSeconds": age_seconds, "providerLatencyMs": 0, "stale": False}
+
+    async with _map_signal_lock:
+        cached = _cached_map_signal(key, MAP_SIGNAL_CACHE_TTL_SECONDS)
+        if cached:
+            payload, age_seconds = cached
+            return payload, {"cacheStatus": "fresh", "cacheAgeSeconds": age_seconds, "providerLatencyMs": 0, "stale": False}
+        task = _map_signal_inflight.get(key)
+        if task is None:
+            task = asyncio.create_task(asyncio.to_thread(query_overpass, lat, lon, radius_meters))
+            _map_signal_inflight[key] = task
+
+            def cache_completed(completed_task: asyncio.Task) -> None:
+                if _map_signal_inflight.get(key) is completed_task:
+                    _map_signal_inflight.pop(key, None)
+                if completed_task.cancelled():
+                    return
+                try:
+                    completed_payload = completed_task.result()
+                except Exception:
+                    return
+                if completed_payload.get("ok"):
+                    _store_map_signal(key, completed_payload)
+
+            task.add_done_callback(cache_completed)
+
+    started = time.perf_counter()
+    payload = await asyncio.shield(task)
+    provider_latency_ms = round((time.perf_counter() - started) * 1000)
+
+    if payload.get("ok"):
+        return payload, {"cacheStatus": "miss", "cacheAgeSeconds": 0, "providerLatencyMs": provider_latency_ms, "stale": False}
+
+    stale = _cached_map_signal(key, MAP_SIGNAL_STALE_SECONDS)
+    if stale:
+        stale_payload, age_seconds = stale
+        stale_payload["fallbackNote"] = "Live OSM data is temporarily unavailable; showing the most recent cached local signals."
+        return stale_payload, {"cacheStatus": "stale", "cacheAgeSeconds": age_seconds, "providerLatencyMs": provider_latency_ms, "stale": True}
+
+    return payload, {"cacheStatus": "miss", "cacheAgeSeconds": None, "providerLatencyMs": provider_latency_ms, "stale": False}
 
 
 def analyze_elements(elements: List[dict]) -> Dict[str, int]:
@@ -346,31 +419,120 @@ def _density_label(comp_count: int, radius_km: float) -> str:
     return "low"
 
 
-def _match_schemes_for_idea(idea: dict, profile: dict, budget: float) -> List[dict]:
-    """Lightweight verified-scheme gate using official curated rules (same sources as /api/schemes)."""
-    matches = []
-    is_artisan = bool(profile.get("isArtisan"))
-    project_cost = idea.get("maxCapital") or idea.get("minCapital") or 0
+# The form uses a small, explicit vocabulary for space and availability.  Keeping
+# the mapping here makes the ranking explainable and avoids inferring a user's
+# circumstances from location data.
+IDEA_PROFILE_REQUIREMENTS = {
+    "idea-grocery": {"workspaces": ("shop",), "availability": "full-time", "businessStage": "expansion", "shgFriendly": False, "artisanFriendly": False},
+    "idea-dairy": {"workspaces": ("outdoor",), "availability": "full-time", "businessStage": "expansion", "shgFriendly": True, "artisanFriendly": False},
+    "idea-food": {"workspaces": ("home", "shop"), "availability": "part-time", "businessStage": "startup", "shgFriendly": True, "artisanFriendly": False},
+    "idea-tailoring": {"workspaces": ("home", "shop"), "availability": "part-time", "businessStage": "startup", "shgFriendly": True, "artisanFriendly": True},
+    "idea-printing": {"workspaces": ("shop",), "availability": "full-time", "businessStage": "expansion", "shgFriendly": False, "artisanFriendly": False},
+    "idea-repair": {"workspaces": ("shop",), "availability": "full-time", "businessStage": "expansion", "shgFriendly": False, "artisanFriendly": True},
+    "idea-agri": {"workspaces": ("shop", "outdoor"), "availability": "full-time", "businessStage": "expansion", "shgFriendly": True, "artisanFriendly": False},
+    "idea-rental": {"workspaces": ("shop", "outdoor"), "availability": "full-time", "businessStage": "expansion", "shgFriendly": False, "artisanFriendly": False},
+    "idea-beauty": {"workspaces": ("home", "shop"), "availability": "flexible", "businessStage": "startup", "shgFriendly": True, "artisanFriendly": False},
+    "idea-digital": {"workspaces": ("shop",), "availability": "full-time", "businessStage": "expansion", "shgFriendly": False, "artisanFriendly": False},
+    "idea-transport": {"workspaces": ("outdoor",), "availability": "full-time", "businessStage": "expansion", "shgFriendly": False, "artisanFriendly": False},
+    "idea-handicrafts": {"workspaces": ("home", "shared"), "availability": "part-time", "businessStage": "startup", "shgFriendly": True, "artisanFriendly": True},
+}
 
-    # PM MUDRA — official mudra.org.in
-    if project_cost <= 1_000_000:
-        matches.append({
-            "schemeId": "pm_mudra",
-            "name": "Pradhan Mantri MUDRA Yojana (PMMY)",
-            "officialUrl": "https://www.mudra.org.in/",
-            "agency": "Ministry of Finance",
-        })
 
-    # PM Vishwakarma — artisans only
-    if is_artisan and project_cost <= 300_000 and idea.get("workType") in ("service", "manufacturing", "agriculture-linked"):
-        if any(k in (idea.get("name") or "").lower() for k in ("tailor", "garment", "handicraft", "repair", "beauty")):
-            matches.append({
-                "schemeId": "pm_vishwakarma",
-                "name": "PM Vishwakarma Yojana",
-                "officialUrl": "https://pmvishwakarma.gov.in/",
-                "agency": "Ministry of MSME",
-            })
+def _profile_fit(idea: dict, profile: dict) -> tuple[int, dict]:
+    """Return a transparent profile-fit score without changing scores for an empty optional profile."""
+    requirements = IDEA_PROFILE_REQUIREMENTS.get(idea["id"], {})
+    factors = {}
+    points = 5
 
+    work_preference = str(profile.get("workPreference") or "").strip().lower()
+    if not work_preference or work_preference == idea["workType"]:
+        points += 2
+        factors["workType"] = "match"
+    else:
+        factors["workType"] = "different preference"
+
+    skill_level = str(profile.get("skillLevel") or "").strip().lower()
+    idea_skill = str(idea["skillLevel"]).lower()
+    if not skill_level or idea_skill == "beginner" or idea_skill == skill_level:
+        points += 3
+        factors["skillLevel"] = "match"
+    else:
+        factors["skillLevel"] = "requires more experience"
+
+    workspace = str(profile.get("spaceStatus") or "").strip().lower()
+    if workspace:
+        compatible_spaces = {workspace}
+        if workspace == "shared":
+            compatible_spaces.update(("home", "shop"))
+        required_spaces = set(requirements.get("workspaces", ()))
+        if compatible_spaces.intersection(required_spaces):
+            points += 2
+            factors["workspace"] = "match"
+        else:
+            points -= 2
+            factors["workspace"] = "space may be needed"
+
+    availability = str(profile.get("availability") or "").strip().lower()
+    if availability:
+        required_availability = requirements.get("availability")
+        if availability == "flexible" or availability == required_availability:
+            points += 2
+            factors["availability"] = "match"
+        elif availability == "full-time" and required_availability == "part-time":
+            points += 1
+            factors["availability"] = "sufficient"
+        else:
+            points -= 1
+            factors["availability"] = "limited"
+
+    try:
+        household_expenses = max(0, float(profile.get("householdExpenses") or 0))
+    except (TypeError, ValueError):
+        household_expenses = 0
+    if household_expenses > 0:
+        available_surplus = idea["avgRevenue"] - idea["avgOperatingCost"] - household_expenses
+        if available_surplus >= 0:
+            points += 2
+            factors["householdExpenses"] = "covered by estimated monthly surplus"
+        else:
+            points -= 3
+            factors["householdExpenses"] = "estimated surplus may not cover household expenses"
+
+    if profile.get("isExistingEnterprise"):
+        if requirements.get("businessStage") == "expansion":
+            points += 2
+            factors["businessStatus"] = "expansion fit"
+        else:
+            factors["businessStatus"] = "new-line diversification"
+
+    if profile.get("isArtisan") and requirements.get("artisanFriendly"):
+        points += 3
+        factors["artisan"] = "artisan fit"
+
+    if profile.get("isSHGMember") and requirements.get("shgFriendly"):
+        points += 2
+        factors["shg"] = "SHG-friendly"
+
+    return max(0, min(20, points)), factors
+
+
+def _match_schemes_for_idea(idea: dict, profile: dict, budget: float, location: dict) -> List[dict]:
+    """Use the same reviewed scheme matcher as ``/api/schemes/match``."""
+    matcher_profile = dict(profile or {})
+    matcher_profile.setdefault("projectCost", idea.get("minCapital") or idea.get("maxCapital") or 0)
+    if budget and not matcher_profile.get("marginCapital"):
+        matcher_profile["marginCapital"] = budget
+
+    _, profile_factors = _profile_fit(idea, profile or {})
+    matches = scheme_matcher.match_schemes(
+        business_category=idea.get("category") or "",
+        business_name=idea.get("name") or "",
+        work_type=idea.get("workType") or "",
+        profile=matcher_profile,
+        location=location or {},
+    )
+    for match in matches:
+        match["profileFactors"] = profile_factors
     return matches
 
 
@@ -380,6 +542,7 @@ def build_opportunities(
     budget: float,
     apply_budget: bool,
     profile: dict,
+    location: dict,
     provider_name: str,
     timestamp: str,
 ) -> tuple:
@@ -580,7 +743,7 @@ def build_opportunities(
 
         comp_count = counts.get(idea["comp_key"], 0)
         density = _density_label(comp_count, radius_km)
-        schemes = _match_schemes_for_idea(idea, profile, budget)
+        schemes = _match_schemes_for_idea(idea, profile, budget, location)
         within_budget = budget <= 0 or budget >= idea["minCapital"]
 
         # Factor 1: Local Demand (0-30)
@@ -599,12 +762,9 @@ def build_opportunities(
         margin = max(0, idea["avgRevenue"] - idea["avgOperatingCost"])
         if margin > 15000: fin_points = min(25, fin_points + 5)
         
-        # Factor 4: User profile fit (0-10)
-        profile_points = 5
-        if (idea["workType"] == profile.get("workPreference") or not profile.get("workPreference")):
-            profile_points += 2
-        if idea["skillLevel"] == profile.get("skillLevel") or idea["skillLevel"] == "Beginner" or not profile.get("skillLevel"):
-            profile_points += 3
+        # Factor 4: User profile fit (0-20).  This stays at the previous 10
+        # points when optional profile information is not provided.
+        profile_points, profile_factors = _profile_fit(idea, profile)
 
         # Factor 5: Verified scheme fit (0-10)
         scheme_points = 10 if len(schemes) > 0 else 0
@@ -634,7 +794,8 @@ def build_opportunities(
                 "competition": comp_points,
                 "finance": fin_points,
                 "profile": profile_points,
-                "schemes": scheme_points
+                "schemes": scheme_points,
+                "profileFactors": profile_factors,
             },
             "schemeSupported": len(schemes) > 0,
             "matchedSchemes": schemes,
@@ -680,7 +841,8 @@ def build_opportunities(
 @router.post("/discover")
 async def discover_businesses(req: DiscoverRequest):
     timestamp = datetime.datetime.now().isoformat()
-    lat, lon, coord_source = _resolve_coords(req.location or {})
+    request_started = time.perf_counter()
+    lat, lon, coord_source = await _resolve_coords(req.location or {})
     radius_km = _parse_radius_km(req)
     radius_m = radius_km * 1000
     budget = _budget(req)
@@ -704,25 +866,10 @@ async def discover_businesses(req: DiscoverRequest):
     category_filter = (filters.get("category") or req.workType or profile.get("workPreference") or "").strip().lower()
     scheme_only = bool(filters.get("schemeSupported"))
 
-    # Primary Places, secondary OSM
-    places = query_google_places(lat, lon, radius_m)
-    if places.get("ok") and places.get("elements"):
-        provider_payload = places
-    else:
-        osm = query_overpass(lat, lon, radius_m)
-        if places.get("reason") == "not_configured":
-            provider_payload = osm
-        elif osm.get("ok"):
-            provider_payload = osm
-            provider_payload["fallbackNote"] = "Google Places unavailable or empty; used OpenStreetMap."
-        else:
-            provider_payload = {
-                "ok": False,
-                "reason": "provider_unavailable",
-                "elements": [],
-                "provider": "none",
-                "count": 0,
-            }
+    # OpenStreetMap Overpass is the only runtime provider. Caching happens
+    # before the public request, and duplicate requests share one fetch.
+    provider_payload, provider_cache = await get_osm_signals(lat, lon, radius_m)
+    request_latency_ms = round((time.perf_counter() - request_started) * 1000)
 
     if not provider_payload.get("ok") or (
         provider_payload.get("reason") in ("provider_error", "provider_unavailable")
@@ -743,6 +890,10 @@ async def discover_businesses(req: DiscoverRequest):
                 "elementCount": 0,
                 "safeMessage": "Live local-business data is unavailable for this area right now.",
                 "jobsConnected": False,
+                "cacheStatus": provider_cache["cacheStatus"],
+                "cacheAgeSeconds": provider_cache["cacheAgeSeconds"],
+                "providerLatencyMs": provider_cache["providerLatencyMs"],
+                "requestLatencyMs": request_latency_ms,
             },
         }
 
@@ -765,12 +916,16 @@ async def discover_businesses(req: DiscoverRequest):
                 "safeMessage": "Live local-business data is unavailable for this area right now.",
                 "jobsConnected": False,
                 "suggestions": ["Increase radius to 10 km or 20 km", "Edit location", "Add manual local observations"],
+                "cacheStatus": provider_cache["cacheStatus"],
+                "cacheAgeSeconds": provider_cache["cacheAgeSeconds"],
+                "providerLatencyMs": provider_cache["providerLatencyMs"],
+                "requestLatencyMs": request_latency_ms,
             },
         }
 
     counts = analyze_elements(elements)
     results, filtered_out = build_opportunities(
-        counts, radius_km, budget, apply_budget, profile,
+        counts, radius_km, budget, apply_budget, profile, req.location or {},
         provider_payload.get("provider", "OpenStreetMap"), timestamp,
     )
 
@@ -804,47 +959,6 @@ async def discover_businesses(req: DiscoverRequest):
                     "reason": "No verified official scheme match for this idea under current profile.",
                 })
 
-    # NEW LOGIC: Dynamic Deep Analysis using Gemini 2.5 Flash
-    if results:
-        import api_ai
-        import asyncio
-        import json
-        
-        prompt = f"""You are Arthniti AI, an expert rural business advisor.
-We have found the following business opportunities. Based on the local statistics provided below, write a deep, 1-2 sentence analytical paragraph for EACH business explaining its viability and potential.
-Local Statistics:
-- Schools: {counts.get('schools', 0)}
-- Markets: {counts.get('markets', 0)}
-- Hospitals: {counts.get('hospitals', 0)}
-- Industrial/Commercial: {counts.get('industrial', 0)}
-
-Respond strictly in JSON format where keys are business IDs and values are the analytical paragraphs.
-{{
-  "idea-grocery": "analysis text...",
-  ...
-}}
-
-Businesses:
-"""
-        for r in results:
-            prompt += f"- ID: {r['id']}, Name: {r['name']}, Category: {r['category']}, Competition Count: {r.get('competitorCount')}\n"
-            
-        try:
-            response_text, _ = await asyncio.to_thread(api_ai._generate, prompt)
-            text = response_text.strip()
-            if text.startswith("```json"): text = text[7:]
-            if text.startswith("```"): text = text[3:]
-            if text.endswith("```"): text = text[:-3]
-            parsed_analysis = json.loads(text.strip())
-            
-            for r in results:
-                if r["id"] in parsed_analysis:
-                    r["signals"] = parsed_analysis[r["id"]]
-                    if isinstance(r.get("provenance"), dict):
-                        r["provenance"]["dataType"] = "AI-Generated Deep Analysis (Gemini 2.5 Flash)"
-        except Exception as e:
-            print(f"Failed to generate deep analysis: {e}")
-
     status = "ok" if results else "no_suitable"
     return {
         "status": status,
@@ -853,7 +967,7 @@ Businesses:
         "counts": counts,
         "meta": {
             "provider": provider_payload.get("provider"),
-            "providerStatus": "connected",
+            "providerStatus": "stale" if provider_cache["stale"] else "connected",
             "radiusKm": radius_km,
             "retrievedAt": timestamp,
             "latitude": lat,
@@ -868,99 +982,262 @@ Businesses:
             },
             "jobsConnected": False,
             "fallbackNote": provider_payload.get("fallbackNote"),
+            "safeMessage": provider_payload.get("fallbackNote"),
+            "cacheStatus": provider_cache["cacheStatus"],
+            "cacheAgeSeconds": provider_cache["cacheAgeSeconds"],
+            "providerLatencyMs": provider_cache["providerLatencyMs"],
+            "requestLatencyMs": request_latency_ms,
         },
     }
 
 
+COMPARISON_WEIGHTS = {
+    "demand": 18,
+    "competition": 15,
+    "capitalGap": 13,
+    "monthlySurplus": 18,
+    "emiBurden": 14,
+    "skills": 10,
+    "schemeFit": 7,
+    "confidence": 5,
+}
+
+
+def _number(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _confidence_score(confidence: str) -> int:
+    return {"high": 5, "medium": 3, "low": 1}.get(confidence.lower(), 1)
+
+
+def _comparison_profile_score(business: Dict[str, Any], profile: Dict[str, Any]) -> int:
+    score_breakdown = business.get("scoreBreakdown") or {}
+    existing = score_breakdown.get("profile")
+    if existing is not None:
+        return int(round(max(0, min(20, _number(existing))) / 20 * COMPARISON_WEIGHTS["skills"]))
+
+    user_skill = str(profile.get("skillLevel") or "").strip().lower()
+    required_skill = str(business.get("skillLevel") or "").strip().lower()
+    if not user_skill or required_skill in ("", "none", "beginner"):
+        return 7
+    if user_skill == required_skill:
+        return COMPARISON_WEIGHTS["skills"]
+    if user_skill == "experienced":
+        return 9
+    return 3
+
+
+def _comparison_scheme_score(business: Dict[str, Any]) -> int:
+    matches = business.get("matchedSchemes") or []
+    if not matches and not business.get("schemeSupported"):
+        return 0
+    best_fit = max((_number(match.get("profileFitScore")) for match in matches), default=0)
+    if best_fit > 0:
+        return int(round(min(20, best_fit) / 20 * COMPARISON_WEIGHTS["schemeFit"]))
+    return 4
+
+
+def _comparison_reasons(row: Dict[str, Any]) -> List[str]:
+    metrics = row["metrics"]
+    reasons = []
+    if row["scoreBreakdown"]["demand"]["score"] >= 13:
+        reasons.append("Strong local demand anchors support this category.")
+    if row["competitorDensity"] == "low":
+        reasons.append("Local competition is low for this category.")
+    elif row["competitorDensity"] == "high":
+        reasons.append("High nearby competition requires a clear differentiator.")
+
+    if metrics["capitalGap"] <= 0:
+        reasons.append("Your stated margin capital covers the estimated starting capital.")
+    else:
+        reasons.append(f"An estimated ₹{metrics['capitalGap']:,.0f} capital gap needs funding or a smaller starting scale.")
+
+    if metrics["monthlySurplus"] > 0:
+        reasons.append(f"Estimated monthly surplus after operating and household costs is ₹{metrics['monthlySurplus']:,.0f}.")
+    else:
+        reasons.append("Estimated revenue does not cover operating and stated household costs yet.")
+
+    if metrics["emiBurdenPercent"] > 60:
+        reasons.append("The estimated EMI would take more than 60% of projected monthly surplus.")
+    elif metrics["estimatedEmi"] > 0:
+        reasons.append(f"Estimated EMI uses {metrics['emiBurdenPercent']:.0f}% of projected monthly surplus.")
+
+    if row["scoreBreakdown"]["skills"]["score"] >= 8:
+        reasons.append("The opportunity fits the skills and operating preferences in your advisory profile.")
+    if row["scoreBreakdown"]["schemeFit"]["score"] > 0:
+        reasons.append("At least one verified scheme is relevant to this opportunity.")
+    if row["confidence"] == "low":
+        reasons.append("Local map signals are incomplete, so validate demand on the ground before investing.")
+    return reasons[:6]
+
+
 @router.post("/compare")
 async def compare_businesses(req: CompareRequest):
-    if len(req.businesses) < 2:
-        raise HTTPException(status_code=400, detail="Need at least 2 businesses to compare")
+    if not req.businesses:
+        raise HTTPException(status_code=400, detail="Choose at least one business for a viability check")
 
+    profile = req.profile or {}
+    budget = max(0, _number(req.budget))
+    household_expenses = max(0, _number(profile.get("householdExpenses")))
     comparisons = []
     missing_data = []
 
-    for b in req.businesses:
-        score = float(b.get("demandProxyScore") or 0)
-        density = b.get("competitorDensity") or "medium"
-        confidence = ((b.get("provenance") or {}).get("confidence")) or "low"
-        has_signals = bool(b.get("signals") or b.get("nearbySignals") or b.get("competitorCount") is not None)
-
+    for business in req.businesses:
+        density = str(business.get("competitorDensity") or "medium").lower()
+        if density not in ("low", "medium", "high"):
+            density = "medium"
+        confidence = str((business.get("provenance") or {}).get("confidence") or "low").lower()
+        if confidence not in ("high", "medium", "low"):
+            confidence = "low"
+        has_signals = bool(
+            business.get("signals")
+            or business.get("nearbySignals")
+            or business.get("competitorCount") is not None
+        )
         if not has_signals:
-            missing_data.append(b.get("name") or b.get("id") or "unknown")
+            missing_data.append(f"{business.get('name') or business.get('id') or 'unknown'}: incomplete local signals")
 
-        if density == "low":
-            score += 15
-            viability = "High"
-            risk = "Low"
-        elif density == "high":
-            score -= 15
-            viability = "Medium-Low"
-            risk = "High"
+        score_breakdown = business.get("scoreBreakdown") or {}
+        demand_raw = _number(score_breakdown.get("demand"))
+        if demand_raw <= 0:
+            demand_raw = min(30, _number(business.get("demandProxyScore")) * 0.3)
+        demand_score = int(round(max(0, min(30, demand_raw)) / 30 * COMPARISON_WEIGHTS["demand"]))
+        competition_score = {"low": 15, "medium": 8, "high": 2}[density]
+
+        min_capital = max(0, _number(business.get("minCapital")))
+        max_capital = max(min_capital, _number(business.get("maxCapital")))
+        project_cost = min_capital or max_capital
+        canonical_finance = finance_engine.build_business_financial_plan(
+            project_cost=project_cost,
+            applicant_margin=budget,
+            monthly_revenue=max(0, _number(business.get("avgRevenue"))),
+            monthly_operating_cost=max(0, _number(business.get("avgOperatingCost"))),
+            household_expenses=household_expenses,
+            scheme_matches=business.get("matchedSchemes") or [],
+        )
+        finance_metrics = canonical_finance.get("financials") or {}
+        capital_gap = _number(finance_metrics.get("requiredCredit"))
+        capital_score = int(round(max(0, 1 - (capital_gap / max(project_cost, 1))) * COMPARISON_WEIGHTS["capitalGap"]))
+
+        monthly_surplus = _number(finance_metrics.get("monthlySurplus"))
+        surplus_score = int(round(min(1, max(0, monthly_surplus) / 25_000) * COMPARISON_WEIGHTS["monthlySurplus"]))
+        estimated_emi = _number(finance_metrics.get("monthlyEmi"))
+        emi_burden = _number(finance_metrics.get("emiToSurplusRatio"))
+        if estimated_emi <= 0:
+            emi_score = COMPARISON_WEIGHTS["emiBurden"]
+        elif emi_burden <= 25:
+            emi_score = COMPARISON_WEIGHTS["emiBurden"]
+        elif emi_burden <= 40:
+            emi_score = 10
+        elif emi_burden <= 60:
+            emi_score = 5
         else:
-            viability = "Medium"
-            risk = "Medium"
+            emi_score = 0
 
-        # Deterministic finance from retrieved capital bands + user budget
-        min_cap = float(b.get("minCapital") or 0)
-        max_cap = float(b.get("maxCapital") or min_cap)
-        avg_rev = float(b.get("avgRevenue") or 0)
-        avg_op = float(b.get("avgOperatingCost") or 0)
-        surplus = avg_rev - avg_op
-        shortfall = max(0, min_cap - req.budget)
-        if shortfall > 0:
-            score -= min(20, shortfall / max(min_cap, 1) * 20)
-            risk = "High" if risk != "High" else risk
+        skills_score = _comparison_profile_score(business, profile)
+        scheme_score = _comparison_scheme_score(business)
+        confidence_score = _confidence_score(confidence)
+        weighted_score = sum((
+            demand_score,
+            competition_score,
+            capital_score,
+            surplus_score,
+            emi_score,
+            skills_score,
+            scheme_score,
+            confidence_score,
+        ))
+        if not has_signals:
+            weighted_score = min(weighted_score, 55)
 
-        scheme_bonus = 5 if b.get("schemeSupported") else 0
-        score += scheme_bonus
+        if weighted_score >= 70 and emi_burden <= 40:
+            viability, risk = "Strong", "Low"
+        elif weighted_score >= 50 and emi_burden <= 60:
+            viability, risk = "Promising", "Medium"
+        elif weighted_score >= 35:
+            viability, risk = "Cautious", "High"
+        else:
+            viability, risk = "High risk", "High"
 
-        # Confidence dampening — never fabricate high scores without data
-        if confidence == "low" or not has_signals:
-            score = min(score, 55)
-            viability = "Low-confidence"
-            missing_data.append(f"{b.get('name')}: incomplete local signals")
-
-        comparisons.append({
-            "id": b.get("id"),
-            "name": b.get("name"),
-            "score": int(min(100, max(0, round(score)))),
+        row = {
+            "id": business.get("id"),
+            "name": business.get("name") or "Business opportunity",
+            "score": int(weighted_score),
+            "weightedScore": int(weighted_score),
             "viability": viability,
             "riskLevel": risk,
-            "financialShortfall": shortfall,
-            "monthlySurplusEstimate": surplus,
+            "financialShortfall": round(capital_gap),
+            "monthlySurplusEstimate": round(monthly_surplus),
             "competitorDensity": density,
-            "competitorCount": b.get("competitorCount"),
-            "schemeSupported": bool(b.get("schemeSupported")),
-            "matchedSchemes": b.get("matchedSchemes") or [],
+            "competitorCount": business.get("competitorCount"),
+            "schemeSupported": bool(business.get("schemeSupported")),
+            "matchedSchemes": business.get("matchedSchemes") or [],
             "confidence": confidence,
-            "provenance": b.get("provenance"),
-            "recommendedAction": (
-                "Insufficient data — add manual observations"
-                if confidence == "low" and not has_signals
-                else ("Proceed with caution" if risk == "High" else "Strong candidate")
-            ),
-        })
+            "provenance": business.get("provenance"),
+            "metrics": {
+                "projectCost": round(project_cost),
+                "capitalGap": round(capital_gap),
+                "monthlySurplus": round(monthly_surplus),
+                "estimatedEmi": round(estimated_emi),
+                "emiBurdenPercent": round(emi_burden, 1),
+                "householdExpenses": round(household_expenses),
+                "annualInterestRate": finance_metrics.get("annualInterestRate"),
+                "tenureMonths": finance_metrics.get("tenureMonths"),
+                "termSource": (canonical_finance.get("terms") or {}).get("termSource"),
+                "demandAnchors": business.get("nearbySignals") or {},
+            },
+            "scoreBreakdown": {
+                "demand": {"label": "Demand", "score": demand_score, "max": COMPARISON_WEIGHTS["demand"]},
+                "competition": {"label": "Competition", "score": competition_score, "max": COMPARISON_WEIGHTS["competition"]},
+                "capitalGap": {"label": "Capital gap", "score": capital_score, "max": COMPARISON_WEIGHTS["capitalGap"]},
+                "monthlySurplus": {"label": "Monthly surplus", "score": surplus_score, "max": COMPARISON_WEIGHTS["monthlySurplus"]},
+                "emiBurden": {"label": "EMI burden", "score": emi_score, "max": COMPARISON_WEIGHTS["emiBurden"]},
+                "skills": {"label": "Skills & profile fit", "score": skills_score, "max": COMPARISON_WEIGHTS["skills"]},
+                "schemeFit": {"label": "Scheme fit", "score": scheme_score, "max": COMPARISON_WEIGHTS["schemeFit"]},
+                "confidence": {"label": "Signal confidence", "score": confidence_score, "max": COMPARISON_WEIGHTS["confidence"]},
+            },
+        }
+        row["recommendationReasons"] = _comparison_reasons(row)
+        row["recommendedAction"] = (
+            "Validate local demand and reduce the capital gap before proceeding."
+            if risk == "High"
+            else "Proceed to the detailed feasibility report and validate costs with local suppliers."
+        )
+        comparisons.append(row)
 
-    comparisons.sort(key=lambda x: x["score"], reverse=True)
+    comparisons.sort(key=lambda item: item["weightedScore"], reverse=True)
     top = comparisons[0]
-    low_confidence = any(c.get("confidence") == "low" for c in comparisons) or bool(missing_data)
+    low_confidence = any(item.get("confidence") == "low" for item in comparisons) or bool(missing_data)
+    is_viability_check = len(comparisons) == 1
+    summary = (
+        f"Viability check: {top['name']} scores {top['weightedScore']}/100 and is a {top['viability'].lower()} option. "
+        f"The result combines local demand, competition, finances, profile fit, verified scheme fit, and data confidence."
+        if is_viability_check
+        else f"{top['name']} ranks first at {top['weightedScore']}/100. Its strongest factors are shown alongside the other selected opportunities; use the reasons below before choosing."
+    )
 
     return {
         "comparisonList": comparisons,
-        "topRecommendation": top["id"] if not low_confidence or top["score"] >= 50 else None,
+        "topRecommendation": top["id"] if top["weightedScore"] >= 35 else None,
+        "recommendation": {
+            "businessId": top["id"],
+            "name": top["name"],
+            "headline": ("Viability check" if is_viability_check else "Recommended option") + f": {top['name']}",
+            "reasons": top["recommendationReasons"],
+        },
+        "isViabilityCheck": is_viability_check,
         "lowConfidence": low_confidence,
         "missingData": list(dict.fromkeys(missing_data)),
-        "summary": (
-            f"Low-confidence comparison: missing or sparse live signals for {', '.join(missing_data[:3])}. "
-            f"Scores are capped until more local observations are added."
-            if low_confidence and missing_data
-            else (
-                f"Based on live market data, {top['name']} ranks highest "
-                f"({top['score']}/100) with {top['competitorDensity']} competitor density "
-                f"and {top['riskLevel']} risk. Scoring is deterministic from retrieved density, "
-                f"demand anchors, budget fit, and verified scheme flags — not AI-generated."
-            )
-        ),
+        "summary": summary,
+        "scoreWeights": COMPARISON_WEIGHTS,
+        "assumptions": {
+            "capitalBasis": "Minimum stated startup capital minus your stated margin capital.",
+            "monthlySurplus": "Estimated revenue minus operating cost and stated household expenses.",
+            "emi": f"Reducing-balance EMI. Published applicable scheme terms are used when available; otherwise the planning baseline is {finance_engine.DEFAULT_ANNUAL_INTEREST_RATE:.0f}% for {finance_engine.DEFAULT_TENURE_MONTHS} months. It is not a loan offer.",
+        },
         "retrievedAt": datetime.datetime.now().isoformat(),
     }
