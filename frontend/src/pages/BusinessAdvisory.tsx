@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { usePredX } from '../context/PredXContext';
 import { useLanguage } from '../lib/i18n';
@@ -6,10 +6,12 @@ import { DISTRICTS, getDistrictById } from '../data/districtData';
 import { geocodingProvider } from '../providers/MockProviders';
 import { LocationProfile } from '../providers/types';
 import ProviderStatusBadge from '../components/ProviderStatusBadge';
+import { useAdvisory, type AdvisorySearch } from '../context/AdvisoryContext';
 
 export default function BusinessAdvisory() {
   const { navigate } = usePredX();
   const { t, lang, toggleLang } = useLanguage();
+  const { activeSearch, searchHistory, startSearch, restoreSearch, deleteSearch, clearActiveSearch } = useAdvisory();
 
   // Location state
   const [locationProfile, setLocationProfile] = useState<LocationProfile | null>(null);
@@ -20,6 +22,10 @@ export default function BusinessAdvisory() {
   const [manualDistrictId, setManualDistrictId] = useState('');
   const [manualBlock, setManualBlock] = useState('');
   const [manualVillage, setManualVillage] = useState('');
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [manualCity, setManualCity] = useState('');
+  const [manualPinCode, setManualPinCode] = useState('');
 
   const uniqueStates = Array.from(new Set(DISTRICTS.map(d => d.state)));
   const availableDistricts = DISTRICTS.filter(d => d.state === manualState);
@@ -34,12 +40,54 @@ export default function BusinessAdvisory() {
   const [timeAvailability, setTimeAvailability] = useState('');
   const [businessSpace, setBusinessSpace] = useState('');
   const [householdExpenses, setHouseholdExpenses] = useState('');
+  const [isExistingEnterprise, setIsExistingEnterprise] = useState(false);
   const [isSHGMember, setIsSHGMember] = useState(false);
   const [isArtisan, setIsArtisan] = useState(false);
   const [gender, setGender] = useState('');
   const [socialCategory, setSocialCategory] = useState('');
 
+  // Search settings are chosen before the advisory is submitted, then stored
+  // with that advisory so restoring it reproduces the same discovery results.
+  const [opportunityCategory, setOpportunityCategory] = useState('');
+  const [opportunityRadiusKm, setOpportunityRadiusKm] = useState<5 | 10 | 20>(5);
+  const [onlyWithinBudget, setOnlyWithinBudget] = useState(true);
+  const [onlySchemeSupported, setOnlySchemeSupported] = useState(false);
+  const [searchPendingDeletion, setSearchPendingDeletion] = useState<AdvisorySearch | null>(null);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const profile = activeSearch?.profile;
+    if (!profile) return;
+    const savedLocation = profile.location as LocationProfile | undefined;
+    setLocationProfile(savedLocation || null);
+    setManualState(savedLocation?.state || '');
+    const savedDistrict = DISTRICTS.find(d => d.name === savedLocation?.district && d.state === savedLocation?.state);
+    setManualDistrictId(savedDistrict?.id || '');
+    setManualBlock(savedLocation?.block || '');
+    setManualVillage(savedLocation?.village || '');
+    setAddressLine1(savedLocation?.addressLine1 || '');
+    setAddressLine2(savedLocation?.addressLine2 || '');
+    setManualCity(savedLocation?.city || '');
+    setManualPinCode(savedLocation?.pinCode || '');
+    setMarginCapital(profile.marginCapital?.toString() || '');
+    setSkillLevel(profile.skillLevel || '');
+    setWorkType(profile.workType || '');
+    setTimeAvailability(profile.timeAvailability || '');
+    setBusinessSpace(profile.businessSpace || '');
+    setHouseholdExpenses(profile.householdExpenses?.toString() || '');
+    setIsExistingEnterprise(!!profile.isExistingEnterprise);
+    setIsSHGMember(!!profile.isSHGMember);
+    setIsArtisan(!!profile.isArtisan);
+    setGender(profile.gender || '');
+    setSocialCategory(profile.socialCategory || '');
+    const searchPreferences = profile.discoveryPreferences || {};
+    setOpportunityCategory(searchPreferences.category || '');
+    setOpportunityRadiusKm([5, 10, 20].includes(searchPreferences.radiusKm) ? searchPreferences.radiusKm : 5);
+    setOnlyWithinBudget(searchPreferences.withinBudget !== false);
+    setOnlySchemeSupported(!!searchPreferences.schemeSupported);
+    setShowMore(true);
+  }, [activeSearch?.id]);
 
   const handleGetCurrentLocation = () => {
     setIsLoadingLocation(true);
@@ -92,7 +140,7 @@ export default function BusinessAdvisory() {
       const qs = new URLSearchParams({
         district: district.name,
         state: district.state,
-        cityOrVillage: district.name,
+        cityOrVillage: manualCity.trim() || manualVillage.trim() || district.name,
       });
       const res = await fetch(`${API_BASE_URL}/api/location/profile?${qs}`);
       if (res.ok) {
@@ -104,6 +152,10 @@ export default function BusinessAdvisory() {
           block: data.location?.block,
           village: data.location?.village || district.name,
           cityOrVillage: data.location?.cityOrVillage || district.name,
+          addressLine1: addressLine1.trim() || undefined,
+          addressLine2: addressLine2.trim() || undefined,
+          city: manualCity.trim() || undefined,
+          pinCode: manualPinCode.trim() || undefined,
           latitude: data.location?.latitude ?? coords.lat,
           longitude: data.location?.longitude ?? coords.lng,
           coordinates: {
@@ -111,7 +163,8 @@ export default function BusinessAdvisory() {
             lng: data.location?.longitude ?? coords.lng ?? 0,
           },
           primarySectors: data.signals?.primarySectors || [district.mainEconomy],
-          population: district.population,
+          population: data.census?.population ?? data.signals?.population,
+          census: data.census,
           msmeDensity: data.signals?.msmeDensity || 'medium',
           confidence: data.provenance?.confidence || 'high',
           lastUpdated: data.provenance?.retrievedAt || new Date().toISOString(),
@@ -121,8 +174,11 @@ export default function BusinessAdvisory() {
         setLocationProfile({
           state: district.state,
           district: district.name,
+          addressLine1: addressLine1.trim() || undefined,
+          addressLine2: addressLine2.trim() || undefined,
+          city: manualCity.trim() || undefined,
+          pinCode: manualPinCode.trim() || undefined,
           primarySectors: [district.mainEconomy],
-          population: district.population,
           msmeDensity: 'medium',
           confidence: 'medium',
           lastUpdated: new Date().toISOString(),
@@ -131,10 +187,13 @@ export default function BusinessAdvisory() {
       }
     } catch {
       setLocationProfile({
-        state: district.state,
-        district: district.name,
+          state: district.state,
+          district: district.name,
+          addressLine1: addressLine1.trim() || undefined,
+          addressLine2: addressLine2.trim() || undefined,
+          city: manualCity.trim() || undefined,
+          pinCode: manualPinCode.trim() || undefined,
         primarySectors: [district.mainEconomy],
-        population: district.population,
         msmeDensity: 'medium',
         confidence: 'medium',
         lastUpdated: new Date().toISOString(),
@@ -151,6 +210,9 @@ export default function BusinessAdvisory() {
     if (!marginCapital || parseFloat(marginCapital) <= 0) {
       newErrors.margin = 'Please enter your available margin capital.';
     }
+    if (manualPinCode.trim() && !/^\d{6}$/.test(manualPinCode.trim())) {
+      newErrors.pinCode = 'Enter a valid 6-digit PIN code.';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -158,21 +220,81 @@ export default function BusinessAdvisory() {
   const handleExplore = () => {
     if (!validate() || !locationProfile) return;
 
-    sessionStorage.setItem('arthniti-profile', JSON.stringify({
-      location: locationProfile,
+    const completedLocation: LocationProfile = {
+      ...locationProfile,
+      block: manualBlock.trim() || locationProfile.block,
+      village: manualVillage.trim() || locationProfile.village,
+      cityOrVillage: manualCity.trim() || manualVillage.trim() || locationProfile.cityOrVillage,
+      addressLine1: addressLine1.trim() || undefined,
+      addressLine2: addressLine2.trim() || undefined,
+      city: manualCity.trim() || undefined,
+      pinCode: manualPinCode.trim() || undefined,
+    };
+    setLocationProfile(completedLocation);
+
+    startSearch({
+      location: completedLocation,
       marginCapital: parseFloat(marginCapital),
       skillLevel,
       workType,
       timeAvailability,
       businessSpace,
       householdExpenses: parseFloat(householdExpenses) || 0,
+      isExistingEnterprise,
       isSHGMember,
       isArtisan,
       gender,
-      socialCategory
-    }));
+      socialCategory,
+      discoveryPreferences: {
+        category: opportunityCategory,
+        radiusKm: opportunityRadiusKm,
+        withinBudget: onlyWithinBudget,
+        schemeSupported: onlySchemeSupported,
+      },
+    });
 
     navigate('explore');
+  };
+
+  const resetForm = () => {
+    setLocationProfile(null);
+    setMarginCapital('');
+    setSkillLevel('');
+    setWorkType('');
+    setTimeAvailability('');
+    setBusinessSpace('');
+    setHouseholdExpenses('');
+    setIsExistingEnterprise(false);
+    setIsSHGMember(false);
+    setIsArtisan(false);
+    setGender('');
+    setSocialCategory('');
+    setManualState('');
+    setManualDistrictId('');
+    setManualBlock('');
+    setManualVillage('');
+    setAddressLine1('');
+    setAddressLine2('');
+    setManualCity('');
+    setManualPinCode('');
+    setOpportunityCategory('');
+    setOpportunityRadiusKm(5);
+    setOnlyWithinBudget(true);
+    setOnlySchemeSupported(false);
+    setErrors({});
+  };
+
+  const handleClearCurrentSearch = () => {
+    clearActiveSearch();
+    resetForm();
+  };
+
+  const confirmDeleteSearch = () => {
+    if (!searchPendingDeletion) return;
+    const isDeletingActiveSearch = activeSearch?.id === searchPendingDeletion.id;
+    deleteSearch(searchPendingDeletion.id);
+    if (isDeletingActiveSearch) resetForm();
+    setSearchPendingDeletion(null);
   };
 
   return (
@@ -203,6 +325,30 @@ export default function BusinessAdvisory() {
           </div>
         </section>
 
+        {activeSearch && (
+          <section className="mb-6 rounded-2xl border border-[#FF5A00]/25 bg-[#FF5A00]/5 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold text-on-surface">Current advisory is saved</p>
+                <p className="text-xs text-on-surface/60">
+                  {activeSearch.discovery ? `${activeSearch.discovery.results.length} saved findings` : 'Profile saved — search has not run yet.'}
+                  {' · '}Updated {new Date(activeSearch.updatedAt).toLocaleString()}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {activeSearch.discovery && (
+                  <button onClick={() => navigate('explore')} className="rounded-lg bg-[#FF5A00] px-3 py-2 text-xs font-bold text-white">
+                    Open findings
+                  </button>
+                )}
+                <button onClick={handleClearCurrentSearch} className="rounded-lg border border-red-400/30 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-400/10">
+                  Clear current advisory
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Form */}
         <section className="space-y-6">
           {/* Location Selection */}
@@ -225,7 +371,7 @@ export default function BusinessAdvisory() {
             </div>
 
             <div className="mb-4">
-              <p className="text-[10px] text-on-surface/50 mb-2 uppercase tracking-widest font-bold">Or select manually</p>
+              <p className="text-[10px] text-on-surface/50 mb-2 uppercase tracking-widest font-bold">Administrative location</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                 <select
                   value={manualState}
@@ -275,6 +421,47 @@ export default function BusinessAdvisory() {
                   className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none disabled:opacity-50"
                 />
               </div>
+
+              <div className="mt-5 border-t border-on-surface/10 pt-4">
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-1">
+                  <p className="text-[10px] text-on-surface/50 uppercase tracking-widest font-bold">Address details</p>
+                  <p className="text-[10px] text-on-surface/40">Optional — saved with this advisory only</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Address line 1"
+                    value={addressLine1}
+                    onChange={e => setAddressLine1(e.target.value)}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Address line 2 (optional)"
+                    value={addressLine2}
+                    onChange={e => setAddressLine2(e.target.value)}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    placeholder="City or town"
+                    value={manualCity}
+                    onChange={e => setManualCity(e.target.value)}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="6-digit PIN code"
+                    value={manualPinCode}
+                    onChange={e => setManualPinCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-4 py-3 text-sm font-body focus:border-[#FF5A00]/50 focus:outline-none"
+                  />
+                </div>
+                <p className="mt-2 text-[10px] text-on-surface/40">State is selected above so it remains aligned with the district used for local insights.</p>
+                {errors.pinCode && <p className="mt-2 text-xs text-red-400">{errors.pinCode}</p>}
+              </div>
             </div>
 
             {errors.location && (
@@ -288,10 +475,15 @@ export default function BusinessAdvisory() {
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-emerald-400 text-[18px]">verified</span>
                     <h4 className="text-sm font-bold text-on-surface">
-                      {manualVillage ? `${manualVillage}, ` : ''}{manualBlock ? `${manualBlock}, ` : ''}{locationProfile.district}, {locationProfile.state}
+                      {locationProfile.city || manualCity ? `${locationProfile.city || manualCity}, ` : manualVillage ? `${manualVillage}, ` : ''}{manualBlock ? `${manualBlock}, ` : ''}{locationProfile.district}, {locationProfile.state}
                     </h4>
                   </div>
                 </div>
+                {(locationProfile.addressLine1 || addressLine1 || locationProfile.addressLine2 || addressLine2 || locationProfile.pinCode || manualPinCode) && (
+                  <p className="mb-3 text-xs text-on-surface/60">
+                    {[locationProfile.addressLine1 || addressLine1, locationProfile.addressLine2 || addressLine2, locationProfile.pinCode || manualPinCode].filter(Boolean).join(', ')}
+                  </p>
+                )}
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -299,9 +491,28 @@ export default function BusinessAdvisory() {
                     <p className="text-xs text-on-surface font-semibold">{locationProfile.primarySectors.join(', ')}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider mb-1">Population</p>
-                    <p className="text-xs text-on-surface font-semibold">{locationProfile.population?.toLocaleString('en-IN')} (approx)</p>
+                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider mb-1">
+                      Population {locationProfile.census?.year ? `· Census ${locationProfile.census.year}` : ''}
+                    </p>
+                    {locationProfile.census?.status === 'available' && locationProfile.population != null ? (
+                      <>
+                        <p className="text-xs text-on-surface font-semibold">
+                          {locationProfile.population.toLocaleString('en-IN')}
+                        </p>
+                        <p className="text-[10px] text-on-surface/45 mt-1 capitalize">
+                          {locationProfile.census.geographicLevel || 'area'}: {locationProfile.census.areaName || locationProfile.district}
+                          {locationProfile.census.cacheStatus === 'stale' ? ' · saved Census result' : ''}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-on-surface/60 font-semibold">Official Census data unavailable</p>
+                    )}
                   </div>
+                  {locationProfile.census?.attribution && (
+                    <p className="col-span-2 text-[10px] text-on-surface/45 leading-relaxed -mt-1">
+                      {locationProfile.census.attribution}
+                    </p>
+                  )}
                   <div className="col-span-2 text-[10px] text-on-surface/40 flex items-center gap-1 mt-2">
                     <span className="material-symbols-outlined text-[12px]">lock</span>
                     Your location is used only to personalise local business insights. You can edit or remove it anytime.
@@ -382,10 +593,82 @@ export default function BusinessAdvisory() {
                     <option value="Other">Other</option>
                   </select>
                 </div>
-                <div className="col-span-1 md:col-span-2 flex items-center justify-between gap-4 bg-on-surface/5 p-3 rounded-xl border border-on-surface/5">
+                <div>
+                  <label className="block text-xs font-body text-on-surface/60 mb-1">Skill Level</label>
+                  <select
+                    value={skillLevel}
+                    onChange={e => setSkillLevel(e.target.value as 'None' | 'Beginner' | 'Experienced' | '')}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                  >
+                    <option value="">Select</option>
+                    <option value="None">No prior experience</option>
+                    <option value="Beginner">Beginner</option>
+                    <option value="Experienced">Experienced</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-body text-on-surface/60 mb-1">Preferred Work Type</label>
+                  <select
+                    value={workType}
+                    onChange={e => setWorkType(e.target.value)}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                  >
+                    <option value="">No preference</option>
+                    <option value="service">Service</option>
+                    <option value="retail">Retail</option>
+                    <option value="manufacturing">Manufacturing</option>
+                    <option value="agriculture-linked">Agriculture-linked</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-body text-on-surface/60 mb-1">Workspace Available</label>
+                  <select
+                    value={businessSpace}
+                    onChange={e => setBusinessSpace(e.target.value)}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                  >
+                    <option value="">Select</option>
+                    <option value="home">Home-based space</option>
+                    <option value="shop">Shop or commercial space</option>
+                    <option value="shared">Shared workspace</option>
+                    <option value="outdoor">Outdoor, farm, or mobile work space</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-body text-on-surface/60 mb-1">Availability</label>
+                  <select
+                    value={timeAvailability}
+                    onChange={e => setTimeAvailability(e.target.value)}
+                    className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl px-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                  >
+                    <option value="">Select</option>
+                    <option value="part-time">Part-time</option>
+                    <option value="full-time">Full-time</option>
+                    <option value="flexible">Flexible</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-body text-on-surface/60 mb-1">Monthly Household Expenses</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={householdExpenses}
+                      onChange={e => setHouseholdExpenses(e.target.value)}
+                      placeholder="e.g. 15000"
+                      className="w-full bg-on-surface/5 border border-on-surface/10 text-on-surface rounded-xl pl-7 pr-3 py-2 text-sm focus:border-[#FF5A00]/50 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="col-span-1 md:col-span-2 flex flex-col items-start gap-3 bg-on-surface/5 p-3 rounded-xl border border-on-surface/5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="artisan" checked={isArtisan} onChange={e => setIsArtisan(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-[#FF5A00]" />
                     <label htmlFor="artisan" className="text-sm cursor-pointer">I am a traditional artisan / craftsperson</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="existing-enterprise" checked={isExistingEnterprise} onChange={e => setIsExistingEnterprise(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-[#FF5A00]" />
+                    <label htmlFor="existing-enterprise" className="text-sm cursor-pointer">I already run a business</label>
                   </div>
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="shg" checked={isSHGMember} onChange={e => setIsSHGMember(e.target.checked)} className="rounded bg-transparent border-on-surface/20 text-[#FF5A00]" />
@@ -394,6 +677,52 @@ export default function BusinessAdvisory() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="bg-on-surface/5 backdrop-blur-xl p-6 rounded-2xl border border-on-surface/10 shadow-[0_4px_20px_rgba(0,0,0,0.2)]">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px] text-[#FF5A00]">tune</span>
+              <h2 className="text-sm font-body font-semibold text-on-surface">Opportunity filters</h2>
+            </div>
+            <p className="mt-1 text-xs text-on-surface/50">Choose what to look for before the search starts. These settings are saved with this advisory.</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs text-on-surface/60">Business category</label>
+                <select
+                  value={opportunityCategory}
+                  onChange={event => setOpportunityCategory(event.target.value)}
+                  className="w-full rounded-xl border border-on-surface/10 bg-on-surface/5 px-3 py-2.5 text-sm text-on-surface focus:border-[#FF5A00]/50 focus:outline-none"
+                >
+                  <option value="">All Categories</option>
+                  <option value="retail">Retail</option>
+                  <option value="service">Services</option>
+                  <option value="manufacturing">Manufacturing</option>
+                  <option value="agriculture-linked">Agriculture Linked</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-on-surface/60">Search radius</label>
+                <select
+                  value={opportunityRadiusKm}
+                  onChange={event => setOpportunityRadiusKm(Number(event.target.value) as 5 | 10 | 20)}
+                  className="w-full rounded-xl border border-on-surface/10 bg-on-surface/5 px-3 py-2.5 text-sm text-on-surface focus:border-[#FF5A00]/50 focus:outline-none"
+                >
+                  <option value={5}>Radius 5 km</option>
+                  <option value={10}>Radius 10 km</option>
+                  <option value={20}>Radius 20 km</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-on-surface/5 bg-on-surface/[0.03] p-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-on-surface/80">
+                <input type="checkbox" checked={onlyWithinBudget} onChange={event => setOnlyWithinBudget(event.target.checked)} className="rounded text-[#FF5A00] focus:ring-[#FF5A00]/50" />
+                Within my budget (₹{Number(marginCapital || 0).toLocaleString('en-IN')})
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-on-surface/80">
+                <input type="checkbox" checked={onlySchemeSupported} onChange={event => setOnlySchemeSupported(event.target.checked)} className="rounded text-[#FF5A00] focus:ring-[#FF5A00]/50" />
+                Scheme Supported
+              </label>
+            </div>
           </div>
 
           {/* Explore CTA */}
@@ -405,6 +734,77 @@ export default function BusinessAdvisory() {
             <span className="material-symbols-outlined">arrow_forward</span>
           </button>
         </section>
+
+        {searchHistory.length > 0 && (
+          <section className="mt-8 rounded-2xl border border-on-surface/10 bg-on-surface/5 p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#FF5A00]">history</span>
+              <div>
+                <h2 className="text-base font-bold text-on-surface">Past advisory searches</h2>
+                <p className="text-xs text-on-surface/50">Restoring a search also restores its linked findings, comparison, and selected business.</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {searchHistory.slice(0, 5).map(search => (
+                <div key={search.id} className="flex flex-col gap-3 rounded-xl border border-on-surface/10 bg-surface-container p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-on-surface">
+                      {search.profile?.location?.district || 'Saved location'}{search.profile?.location?.state ? `, ${search.profile.location.state}` : ''}
+                    </p>
+                    <p className="text-xs text-on-surface/55">
+                      {new Date(search.updatedAt).toLocaleString()} · {search.discovery?.results?.length || 0} findings
+                      {search.comparison?.businesses?.length ? ` · ${search.comparison.businesses.length} compared` : ''}
+                      {search.selectedBusiness?.name ? ` · ${search.selectedBusiness.name}` : ''}
+                      {search.feasibilityReport ? ' · report saved' : ''}
+                      {search.financialPlan?.plan ? ' · financial plan saved' : ''}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => {
+                        restoreSearch(search.id);
+                        navigate(search.discovery ? 'explore' : 'advisory');
+                      }}
+                      className="rounded-lg border border-[#FF5A00]/30 px-3 py-2 text-xs font-bold text-[#FF8C00] hover:bg-[#FF5A00]/10"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => setSearchPendingDeletion(search)}
+                      className="rounded-lg border border-red-400/30 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-400/10"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {searchPendingDeletion && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="delete-advisory-title">
+            <div className="w-full max-w-md rounded-2xl border border-red-400/25 bg-surface-container p-6 shadow-2xl">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined rounded-full bg-red-400/10 p-2 text-red-300">delete_forever</span>
+                <div>
+                  <h2 id="delete-advisory-title" className="text-lg font-bold text-on-surface">Delete this advisory search?</h2>
+                  <p className="mt-2 text-sm text-on-surface/65">
+                    This removes the saved profile, findings, comparison, report, and financial plan for <span className="font-semibold text-on-surface">{searchPendingDeletion.profile?.location?.district || 'this location'}</span>. This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button onClick={() => setSearchPendingDeletion(null)} className="rounded-xl border border-on-surface/15 px-4 py-2 text-sm font-bold text-on-surface/70 hover:bg-on-surface/5">
+                  Cancel
+                </button>
+                <button onClick={confirmDeleteSearch} className="rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-400">
+                  Delete search
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

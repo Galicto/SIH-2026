@@ -103,6 +103,19 @@
   --inverse-on-surface: 237 241 246;
 }
 
+/* Theme the choices shown in native dropdown menus without changing the closed control. */
+select option,
+select optgroup {
+  background-color: #000000;
+  color: #ff5a00;
+}
+
+.theme-light select option,
+.theme-light select optgroup {
+  background-color: #fffaf2;
+  color: #ff5a00;
+}
+
 /* ========================================
    ALGOHACK DASHBOARD — PredX-Inspired Styles
    ======================================== */

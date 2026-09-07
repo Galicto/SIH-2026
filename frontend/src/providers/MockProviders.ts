@@ -19,6 +19,7 @@ export class ApiGeocodingProvider implements GeocodingProvider {
         coordinates: data.location.coordinates,
         primarySectors: data.signals.primarySectors,
         population: data.signals.population,
+        census: data.census,
         msmeDensity: data.signals.msmeDensity,
         confidence: data.provenance.confidence,
         lastUpdated: data.provenance.retrievedAt,
@@ -67,7 +68,13 @@ export class ApiSchemeProvider implements SchemeProvider {
     marginCapital: number;
     socialCategory?: string;
     gender?: string;
+    skillLevel?: string;
+    workPreference?: string;
+    spaceStatus?: string;
+    availability?: string;
+    householdExpenses?: number;
     isArtisan?: boolean;
+    isSHGMember?: boolean;
     isExistingEnterprise?: boolean;
     hasUdyam?: boolean;
   }): Promise<SchemeMatch[]> {
@@ -75,7 +82,14 @@ export class ApiSchemeProvider implements SchemeProvider {
       const res = await fetch(`${API_BASE}/schemes/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile)
+        body: JSON.stringify({
+          businessCategory: profile.category,
+          userProfile: {
+            ...profile,
+            budget: profile.projectCost,
+          },
+          location: { state: profile.state },
+        })
       });
       if (!res.ok) return [];
       const data = await res.json();

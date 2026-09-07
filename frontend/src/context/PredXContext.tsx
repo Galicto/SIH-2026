@@ -124,6 +124,7 @@ const LAYOUT_STORAGE_KEY = 'predx-layout-mode';
 const PRIVATE_PORTFOLIO_STORAGE_KEY = 'predx-private-portfolio-mode';
 const BROWSER_NOTIFICATIONS_STORAGE_KEY = 'predx-browser-notifications';
 const SYSTEM_ALERTS_STORAGE_KEY = 'predx-system-alerts';
+const HIDDEN_PAGES = new Set(['wealth', 'transactions']);
 
 const getInitialThemeMode = (): ThemeMode => {
   if (typeof window === 'undefined') return 'dark';
@@ -188,7 +189,7 @@ export const PredXProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const validPages = [
       'home','dashboard','markets','leaderboard','terminal','settings','screener','trade','support',
       // Finance pages
-      'analysis','wealth','education','goals','transactions',
+      'analysis','education','goals',
       // Arthniti pages
       'advisory','feasibility','financial-plan','arthniti-chat',
     ];
@@ -274,10 +275,11 @@ export const PredXProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [systemAlertsEnabled]);
 
   const navigate = (page: string, props: any = {}) => {
-    setCurrentPage(page);
-    setPageProps(props);
+    const targetPage = HIDDEN_PAGES.has(page) ? 'home' : page;
+    setCurrentPage(targetPage);
+    setPageProps(HIDDEN_PAGES.has(page) ? {} : props);
     if (typeof window !== 'undefined') {
-      window.location.hash = page;
+      window.location.hash = targetPage;
     }
     window.scrollTo(0, 0);
   };

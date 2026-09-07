@@ -1,0 +1,47 @@
+{
+  "catalogVersion": 1,
+  "catalogUpdatedAt": "2026-09-07T00:00:00+05:30",
+  "records": [
+    {
+      "schemeId": "pm_mudra",
+      "name": "Pradhan Mantri MUDRA Yojana (PMMY)",
+      "governmentLevel": "Central",
+      "stateCoverage": ["ALL"],
+      "agency": "Department of Financial Services, Ministry of Finance",
+      "businessCategories": ["retail", "food", "services", "manufacturing", "agriculture-linked", "transport", "rental", "digital"],
+      "targetGroups": ["new_entrepreneur", "existing_enterprise"],
+      "benefitType": ["collateral-free credit", "term loan", "working capital"],
+      "benefitSummary": "Collateral-free institutional credit for eligible non-corporate, non-farm micro enterprises. Standard PMMY categories run up to ₹10 lakh; Tarun Plus up to ₹20 lakh has an additional prior-repayment condition.",
+      "description": "Supports eligible micro enterprises in manufacturing, trading, services and activities allied to agriculture through participating lenders.",
+      "maxProjectCost": 1000000,
+      "conditionalBenefit": "Tarun Plus: above ₹10 lakh to ₹20 lakh only for entrepreneurs who have previously availed and successfully repaid a Tarun loan.",
+      "eligibilityRules": {"minimumAge": 18, "isArtisan": null, "isExistingEnterprise": null},
+      "eligibilitySummary": "The business must meet the lender's PMMY eligibility and credit assessment. Tarun Plus requires successful repayment of an earlier Tarun loan.",
+      "requiredDocuments": ["Identity and address proof requested by the lender", "PAN where required by the lender", "Business plan, quotations, or other lender-requested business documents"],
+      "applicationRoute": "Apply through a participating bank, RRB, small finance bank, NBFC, MFI, or the official PMMY/JanSamarth route.",
+      "officialUrl": "https://financialservices.gov.in/pradhan-mantri-mudra-yojana-pmmy",
+      "financeTerms": {"termStatus": "lender_determined", "note": "The interest rate and repayment tenure are set by the lending institution under its policy. Arthniti uses a transparent planning baseline until a lender quote is available.", "sourceUrl": "https://financialservices.gov.in/pradhan-mantri-mudra-yojana-pmmy"},
+      "provenance": {"source": "Department of Financial Services, Ministry of Finance", "sourceUrl": "https://financialservices.gov.in/pradhan-mantri-mudra-yojana-pmmy", "sourceUpdatedAt": "2026-02-05", "retrievedAt": "2026-09-07T00:00:00+05:30", "verifiedAt": "2026-09-07T00:00:00+05:30", "verificationStatus": "officially_verified", "confidence": "high"}
+    },
+    {
+      "schemeId": "pm_vishwakarma",
+      "name": "PM Vishwakarma",
+      "governmentLevel": "Central",
+      "stateCoverage": ["ALL"],
+      "agency": "Ministry of Micro, Small and Medium Enterprises",
+      "businessCategories": ["tailoring", "handicrafts", "beauty"],
+      "targetGroups": ["artisan"],
+      "benefitType": ["collateral-free credit", "skill training", "toolkit incentive", "market support"],
+      "benefitSummary": "For eligible traditional artisans and craftspeople in the notified trades: training, a toolkit incentive up to ₹15,000, and collateral-free Enterprise Development Loans up to ₹3 lakh in two conditional tranches.",
+      "description": "End-to-end support for artisans and craftspeople working with their hands and tools in the notified traditional trades.",
+      "maxProjectCost": 300000,
+      "eligibilityRules": {"minimumAge": 18, "isArtisan": true, "isExistingEnterprise": null},
+      "eligibilitySummary": "Applicants must be eligible traditional artisans or craftspeople in a notified trade and complete the official verification process. Basic training is required before the first credit tranche.",
+      "requiredDocuments": ["Aadhaar and Aadhaar-linked mobile number", "Bank account details", "Documents or verification requested through the PM Vishwakarma process"],
+      "applicationRoute": "Apply through a Common Service Centre (CSC) or the official PM Vishwakarma portal; eligibility is verified through the official process.",
+      "officialUrl": "https://pmvishwakarma.gov.in/",
+      "financeTerms": {"annualInterestRate": 5.0, "tenureMonths": 18, "maxCredit": 100000, "termStatus": "published_scheme_terms", "note": "First credit tranche: up to ₹1 lakh after basic training. A second tranche of up to ₹2 lakh has separate conditions and is not assumed in the first-stage plan.", "sourceUrl": "https://www.pib.gov.in/PressNoteDetails.aspx?ModuleId=3&NoteId=155216&id=155216&lang=2&reg=3"},
+      "provenance": {"source": "Press Information Bureau / Ministry of MSME", "sourceUrl": "https://www.pib.gov.in/PressNoteDetails.aspx?ModuleId=3&NoteId=155216&id=155216&lang=2&reg=3", "sourceUpdatedAt": "2026-05-14", "retrievedAt": "2026-09-07T00:00:00+05:30", "verifiedAt": "2026-09-07T00:00:00+05:30", "verificationStatus": "officially_verified", "confidence": "high"}
+    }
+  ]
+}

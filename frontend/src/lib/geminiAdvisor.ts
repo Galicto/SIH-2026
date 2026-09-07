@@ -10,6 +10,8 @@ import { LocationProfile, BusinessItem } from '../providers/types';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
+export type ModelSource = 'gemini' | 'openrouter' | 'ollama' | 'ollama_cloud';
+
 export type ChatResult =
   | { ok: true; response: string }
   | { ok: false; statusCode: number; message: string };
@@ -18,6 +20,7 @@ export async function chatWithAdvisor(
   message: string,
   fullContext?: {
     language?: string;
+    modelSource?: ModelSource;
     location?: any;
     businessDiscoveryResults?: any[];
     selectedBusinesses?: any[];
@@ -59,14 +62,14 @@ export async function chatWithAdvisor(
   }
 }
 
-export async function fetchAiHealth(): Promise<{
+export async function fetchAiHealth(source: ModelSource): Promise<{
   status: 'connected' | 'unavailable' | 'not_configured';
   provider: string;
   model: string | null;
   checkedAt: string;
   safeReason: string;
 }> {
-  const res = await fetch(`${API_BASE}/api/ai/health`);
+  const res = await fetch(`${API_BASE}/api/ai/health?source=${source}`);
   if (!res.ok) throw new Error(`health_${res.status}`);
   const data = await res.json();
   return {

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
+from typing import Optional, Any
 import finance_engine
 import datetime
 
@@ -31,92 +32,89 @@ async def calculate_finance(req: FinanceRequest):
     }
 
 class FinancialPlanRequest(BaseModel):
-    projectCost: float
-    applicantMargin: float
-    requiredCredit: float
-    annualInterestRate: float
-    tenureMonths: int
+    # The business/profile shape is the canonical advisory request. The scalar
+    # fields remain accepted for backwards compatibility with older clients.
+    business: Optional[dict] = None
+    userProfile: Optional[dict] = None
+    location: Optional[dict] = None
+    schemeMatches: Optional[list[dict]] = None
+    projectCost: Optional[float] = None
+    applicantMargin: Optional[float] = None
+    requiredCredit: Optional[float] = None
+    annualInterestRate: Optional[float] = None
+    tenureMonths: Optional[int] = None
     monthlyRevenue: float = 0
     monthlyOperatingCost: float = 0
+    householdExpenses: float = 0
+
+
+def _number(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _scheme_matches_for_plan(req: FinancialPlanRequest, project_cost: float) -> tuple[list[dict], dict]:
+    if req.schemeMatches is not None:
+        return req.schemeMatches, {"status": "ready", "matches": req.schemeMatches}
+    if not req.business:
+        return [], {"status": "not_requested", "matches": []}
+
+    try:
+        import api_schemes
+        profile = {**(req.userProfile or {}), "projectCost": project_cost}
+        match_request = api_schemes.SchemeMatchRequest(
+            businessCategory=req.business.get("category", ""),
+            userProfile=profile,
+            location=req.location or (req.userProfile or {}).get("location") or {},
+        )
+        response = await api_schemes.match_schemes(match_request)
+        return response.get("matches") or [], response
+    except Exception as error:
+        print(f"Financial plan scheme matching error: {type(error).__name__}")
+        return [], {"status": "unavailable", "matches": [], "message": "Scheme matching is unavailable; a lender-neutral planning model was used."}
 
 @router.post("/plan")
 async def financial_plan(req: FinancialPlanRequest):
-    import math
     timestamp = datetime.datetime.now().isoformat()
-    errors = []
+    business = req.business or {}
+    profile = req.userProfile or {}
+    project_cost = _number(
+        business.get("minCapital")
+        or business.get("maxCapital")
+        or req.projectCost
+    )
+    applicant_margin = _number(profile.get("marginCapital") if req.business else req.applicantMargin)
+    monthly_revenue = _number(business.get("avgRevenue") if req.business else req.monthlyRevenue)
+    monthly_operating_cost = _number(business.get("avgOperatingCost") if req.business else req.monthlyOperatingCost)
+    household_expenses = _number(profile.get("householdExpenses") if req.business else req.householdExpenses)
 
-    if req.projectCost <= 0: errors.append("Invalid projectCost")
-    if req.applicantMargin < 0: errors.append("Invalid applicantMargin")
-    if req.requiredCredit < 0: errors.append("Invalid requiredCredit")
-    if req.annualInterestRate <= 0: errors.append("Invalid annualInterestRate")
-    if req.tenureMonths <= 0: errors.append("Invalid tenureMonths")
-    if req.monthlyRevenue < 0: errors.append("Invalid monthlyRevenue")
-    if req.monthlyOperatingCost < 0: errors.append("Invalid monthlyOperatingCost")
-    if any(math.isnan(val) for val in [req.projectCost, req.applicantMargin, req.requiredCredit, req.annualInterestRate, req.tenureMonths, req.monthlyRevenue, req.monthlyOperatingCost]):
-        errors.append("NaN input detected")
-
-    if len(errors) > 0:
+    if applicant_margin < 0 or monthly_revenue < 0 or monthly_operating_cost < 0 or household_expenses < 0:
         return {
             "status": "incomplete",
-            "financials": {
-                "projectCost": None, "applicantMargin": None, "requiredCredit": None,
-                "annualInterestRate": None, "tenureMonths": None, "monthlyEmi": None,
-                "monthlyRevenue": None, "monthlyOperatingCost": None, "monthlySurplus": None,
-                "emiToSurplusRatio": None, "repaymentReadinessScore": None
-            },
-            "validationErrors": errors,
-            "message": "Credit plan unavailable — verified scheme terms are required.",
-            "source": {"retrievedAt": timestamp}
+            "financials": {},
+            "validationErrors": ["Financial inputs cannot be negative."],
+            "message": "Financial plan unavailable because one or more inputs are invalid.",
+            "source": {"retrievedAt": timestamp, "name": "Arthniti Deterministic Engine"},
         }
 
-    monthly_emi = finance_engine.calculate_emi(req.requiredCredit, req.annualInterestRate, req.tenureMonths)
-    monthly_surplus = max(0, req.monthlyRevenue - req.monthlyOperatingCost)
-    
-    if monthly_surplus > 0:
-        emi_to_surplus_ratio = min(100.0, (monthly_emi / monthly_surplus) * 100)
-    else:
-        emi_to_surplus_ratio = 100.0 if monthly_emi > 0 else 0.0
-
-    readiness = 0
-    msg = ""
-    if monthly_emi > req.monthlyRevenue:
-        msg = "This business plan is not financially viable under current assumptions."
-        readiness = 0
-    elif emi_to_surplus_ratio < 35:
-        msg = "Your expected surplus easily covers the EMI."
-        readiness = 90
-    elif emi_to_surplus_ratio <= 50:
-        msg = "EMI is manageable, but takes up a significant portion of surplus."
-        readiness = 70
-    elif emi_to_surplus_ratio <= 80:
-        msg = "Caution: EMI is high relative to surplus."
-        readiness = 40
-    else:
-        msg = "EMI exceeds safe limits. High risk of default."
-        readiness = 20
-
-    return {
-        "status": "ready",
-        "financials": {
-            "projectCost": req.projectCost,
-            "applicantMargin": req.applicantMargin,
-            "requiredCredit": req.requiredCredit,
-            "annualInterestRate": req.annualInterestRate,
-            "tenureMonths": req.tenureMonths,
-            "monthlyEmi": monthly_emi,
-            "monthlyRevenue": req.monthlyRevenue,
-            "monthlyOperatingCost": req.monthlyOperatingCost,
-            "monthlySurplus": monthly_surplus,
-            "emiToSurplusRatio": emi_to_surplus_ratio,
-            "repaymentReadinessScore": readiness
-        },
-        "validationErrors": [],
-        "message": msg,
-        "source": {
-            "retrievedAt": timestamp,
-            "name": "Arthniti Deterministic Engine"
-        }
+    matches, scheme_matching = await _scheme_matches_for_plan(req, project_cost)
+    plan = finance_engine.build_business_financial_plan(
+        project_cost=project_cost,
+        applicant_margin=applicant_margin,
+        monthly_revenue=monthly_revenue,
+        monthly_operating_cost=monthly_operating_cost,
+        household_expenses=household_expenses,
+        scheme_matches=matches,
+    )
+    plan["schemeMatching"] = scheme_matching
+    plan["source"] = {
+        "retrievedAt": timestamp,
+        "name": "Arthniti canonical deterministic finance model",
+        "dataType": "reducing-balance EMI estimate",
     }
+    return plan
 
 class DebtHealthRequest(BaseModel):
     financialPlan: dict

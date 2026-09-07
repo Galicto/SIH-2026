@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { normalizeSchemeMatchResponse } from '../lib/schemas';
 import { safeCurrency, safeString, safeDate } from '../lib/safeFormatters';
 import PanelErrorBoundary from './PanelErrorBoundary';
+import { API_BASE_URL } from '../config';
 
 interface SchemeMatcherProps {
   status?: "checking" | "ready" | "unavailable" | "no_match" | "error";
@@ -47,7 +48,7 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
     if (profile) {
       setInternalState(prev => ({ ...prev, status: "checking" }));
       const controller = new AbortController();
-      fetch('http://localhost:8000/api/schemes/match', {
+      fetch(`${API_BASE_URL}/api/schemes/match`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -76,6 +77,7 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
       
       return () => controller.abort();
     }
+    return undefined;
   }, [propsStatus, propsMatches, propsMessage, propsSources, propsProviderStatus, propsRetrievedAt, profile]);
 
   const state = propsStatus !== undefined ? {
@@ -147,6 +149,16 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
               </a>
             )}
           </div>
+
+          <div className="mb-3 flex flex-wrap gap-1.5 text-[9px] font-bold uppercase tracking-wide">
+            <span className="rounded-full bg-[#FF5A00]/10 px-2 py-1 text-[#FF8C00]">May be eligible</span>
+            {m?.governmentLevel && <span className="rounded-full bg-on-surface/5 px-2 py-1 text-on-surface/60">{safeString(m.governmentLevel)}</span>}
+            {Array.isArray(m?.stateCoverage) && (
+              <span className="rounded-full bg-on-surface/5 px-2 py-1 text-on-surface/60">
+                {m.stateCoverage.includes('ALL') ? 'All India' : m.stateCoverage.join(', ')}
+              </span>
+            )}
+          </div>
           
           {m?.whyRelevant && (
             <div className="bg-[#FF5A00]/5 text-[#FF5A00] text-[11px] p-2 rounded mb-3 border border-[#FF5A00]/10 font-medium">
@@ -161,10 +173,38 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
               <span className="font-semibold text-on-surface">{safeCurrency(m?.maxProjectCost)}</span>
             </div>
             <div>
-              <span className="text-on-surface/50 block">Description</span>
-              <span className="font-semibold text-on-surface">{safeString(m?.description)}</span>
+              <span className="text-on-surface/50 block">Benefit type</span>
+              <span className="font-semibold text-on-surface">{Array.isArray(m?.benefitType) ? m.benefitType.join(', ') : 'Not available'}</span>
             </div>
           </div>
+
+          {m?.benefitSummary && (
+            <div className="mb-3 rounded-lg border border-[#FF5A00]/10 bg-[#FF5A00]/5 p-3 text-[10px] text-on-surface/75">
+              <span className="mb-1 block font-bold text-[#FF8C00]">Benefit</span>
+              {safeString(m.benefitSummary)}
+            </div>
+          )}
+
+          <div className="mb-3 text-[10px]">
+            <span className="mb-1 block text-on-surface/50">Eligibility summary</span>
+            <span className="font-semibold text-on-surface">{safeString(m?.eligibilitySummary, safeString(m?.description))}</span>
+          </div>
+
+          {Array.isArray(m?.eligibilityChecks) && m.eligibilityChecks.length > 0 && (
+            <div className="mb-3 rounded-lg bg-on-surface/5 p-3 text-[10px]">
+              <span className="mb-2 block font-bold text-on-surface/70">Profile checks</span>
+              <ul className="space-y-1.5">
+                {m.eligibilityChecks.map((check: any, checkIndex: number) => (
+                  <li key={`${check.label}-${checkIndex}`} className="flex items-start gap-2 text-on-surface/65">
+                    <span className={`mt-0.5 material-symbols-outlined text-[13px] ${check.status === 'met' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {check.status === 'met' ? 'check_circle' : 'info'}
+                    </span>
+                    <span><strong className="text-on-surface/80">{safeString(check.label)}:</strong> {safeString(check.detail)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="text-[10px] mb-3">
             <span className="text-on-surface/50 block mb-1">Required Documents to prepare:</span>
@@ -181,6 +221,8 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
               <ul className="list-disc pl-4">
                 <li><span className="font-semibold">Source:</span> {safeString(m.provenance.source)}</li>
                 <li><span className="font-semibold">Confidence:</span> {safeString(m.provenance.confidence)}</li>
+                <li><span className="font-semibold">Source updated:</span> {safeDate(m.provenance.sourceUpdatedAt, 'Not published')}</li>
+                <li><span className="font-semibold">Last verified:</span> {safeDate(m.provenance.verifiedAt, 'Not recorded')}</li>
                 <li><span className="font-semibold">Retrieved:</span> {safeDate(m.provenance.retrievedAt)}</li>
               </ul>
             ) : (
@@ -189,7 +231,7 @@ function SchemeMatcherContent({ status: propsStatus, matches: propsMatches, mess
           </div>
           
           <div className="mt-3 pt-2 border-t border-outline-variant/5 flex items-center justify-between text-[9px] text-on-surface/40">
-            <span>{safeString(m?.verificationNote, "Subject to bank approval")}</span>
+            <span>{safeString(m?.verificationNote, "Verify eligibility, documents, and current terms with the official portal or lender.")}</span>
             <span>{safeString(m?.applicationRoute, "Contact local branch")}</span>
           </div>
         </div>

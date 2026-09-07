@@ -4,6 +4,7 @@ import { usePredX } from '../context/PredXContext';
 import { useLanguage } from '../lib/i18n';
 import { BusinessItem } from '../providers/types';
 import { API_BASE_URL } from '../config';
+import { useAdvisory } from '../context/AdvisoryContext';
 
 type DiscoverMeta = {
   provider?: string;
@@ -18,6 +19,10 @@ type DiscoverMeta = {
   jobsConnected?: boolean;
   filtersApplied?: { withinBudget?: boolean; category?: string | null; schemeSupported?: boolean };
   fallbackNote?: string;
+  cacheStatus?: 'miss' | 'fresh' | 'stale';
+  cacheAgeSeconds?: number | null;
+  providerLatencyMs?: number;
+  requestLatencyMs?: number;
 };
 
 type FilteredOut = { id: string; name: string; reason: string };
@@ -34,10 +39,12 @@ type EnrichedBusiness = BusinessItem & {
 export default function ExploreBusinesses() {
   const { navigate } = usePredX();
   const { t } = useLanguage();
+  const { activeSearch, updateActiveSearch, clearActiveSearch } = useAdvisory();
 
   const [profile, setProfile] = useState<any>(null);
   const [businesses, setBusinesses] = useState<EnrichedBusiness[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchProgress, setSearchProgress] = useState(8);
   const [status, setStatus] = useState<'ok' | 'provider_unavailable' | 'no_suitable' | 'error'>('ok');
   const [meta, setMeta] = useState<DiscoverMeta | null>(null);
   const [filteredOut, setFilteredOut] = useState<FilteredOut[]>([]);
@@ -50,6 +57,26 @@ export default function ExploreBusinesses() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const fetchRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const inFlightRequestKeyRef = useRef<string | null>(null);
+  const skipInitialFilterFetchRef = useRef(false);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setSearchProgress(8);
+      return;
+    }
+
+    setSearchProgress(8);
+    const interval = window.setInterval(() => {
+      setSearchProgress(current => {
+        if (current >= 92) return current;
+        return Math.min(92, current + Math.max(1, Math.ceil((92 - current) / 7)));
+      });
+    }, 280);
+
+    return () => window.clearInterval(interval);
+  }, [isLoading]);
 
   const buildLocationPayload = (p: any, radius: number) => {
     const loc = p.location || {};
@@ -66,12 +93,11 @@ export default function ExploreBusinesses() {
   };
 
   const fetchBusinesses = useCallback(async (p: any, opts?: { radius?: number; withinBudget?: boolean; category?: string; schemeSupported?: boolean }) => {
-    const reqId = ++fetchRef.current;
-    setIsLoading(true);
     const radius = opts?.radius ?? radiusKm;
     const withinBudget = opts?.withinBudget ?? filterCapital;
     const category = opts?.category ?? filterWorkType;
     const schemeSupported = opts?.schemeSupported ?? filterScheme;
+    let reqId: number | null = null;
 
     try {
       const payload = {
@@ -83,8 +109,13 @@ export default function ExploreBusinesses() {
           spaceStatus: p.businessSpace || '',
           availability: p.timeAvailability || '',
           skillLevel: p.skillLevel || '',
+          householdExpenses: Number(p.householdExpenses) || 0,
+          isExistingEnterprise: !!p.isExistingEnterprise,
           isArtisan: !!p.isArtisan,
+          isSHGMember: !!p.isSHGMember,
           isWomenEnterprise: p.gender === 'Female',
+          socialCategory: p.socialCategory || '',
+          gender: p.gender || '',
         },
         filters: {
           category: category || '',
@@ -99,10 +130,22 @@ export default function ExploreBusinesses() {
         radius: `${radius}km`,
       };
 
+      const requestKey = JSON.stringify(payload);
+      if (inFlightRequestKeyRef.current === requestKey) return;
+
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      inFlightRequestKeyRef.current = requestKey;
+      reqId = ++fetchRef.current;
+      setSearchProgress(8);
+      setIsLoading(true);
+
       const res = await fetch(`${API_BASE_URL}/api/business/discover`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
       if (reqId !== fetchRef.current) return;
@@ -120,46 +163,69 @@ export default function ExploreBusinesses() {
       setMeta(nextMeta);
       setFilteredOut(nextFiltered);
 
-      sessionStorage.setItem('arthniti-discovery-results', JSON.stringify(results));
-      sessionStorage.setItem('arthniti-discovery-meta', JSON.stringify(nextMeta));
-      if (manualNote.trim()) {
-        sessionStorage.setItem('arthniti-manual-observations', manualNote.trim());
-      }
+      updateActiveSearch({
+        discovery: {
+          results,
+          meta: nextMeta,
+          filteredOut: nextFiltered,
+          status: nextStatus,
+          manualNote: manualNote.trim() || undefined,
+        },
+      });
     } catch (e) {
-      if (reqId !== fetchRef.current) return;
+      if (reqId == null || reqId !== fetchRef.current) return;
+      if (e instanceof Error && e.name === 'AbortError') return;
       setBusinesses([]);
       setStatus('provider_unavailable');
       setMeta({ safeMessage: 'Live local-business data is unavailable for this area right now.' });
       setFilteredOut([]);
     } finally {
-      if (reqId === fetchRef.current) setIsLoading(false);
+      if (reqId != null && reqId === fetchRef.current) {
+        setSearchProgress(100);
+        await new Promise<void>(resolve => window.setTimeout(resolve, 180));
+        if (reqId !== fetchRef.current) return;
+        setIsLoading(false);
+        abortControllerRef.current = null;
+        inFlightRequestKeyRef.current = null;
+      }
     }
-  }, [radiusKm, filterCapital, filterWorkType, filterScheme, manualNote]);
+  }, [radiusKm, filterCapital, filterWorkType, filterScheme, manualNote, updateActiveSearch]);
 
   useEffect(() => {
-    const saved = sessionStorage.getItem('arthniti-profile');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      setProfile(parsed);
-      fetchBusinesses(parsed);
-    } else {
+    if (!activeSearch?.profile) {
       navigate('advisory');
+      return;
+    }
+    const savedProfile = activeSearch.profile;
+    const preferences = savedProfile.discoveryPreferences || {};
+    setProfile(savedProfile);
+    setFilterWorkType(preferences.category || '');
+    setRadiusKm([5, 10, 20].includes(preferences.radiusKm) ? preferences.radiusKm : 5);
+    setFilterCapital(preferences.withinBudget !== false);
+    setFilterScheme(!!preferences.schemeSupported);
+    if (activeSearch.discovery) {
+      skipInitialFilterFetchRef.current = true;
+      const savedDiscovery = activeSearch.discovery;
+      setBusinesses(savedDiscovery.results || []);
+      setStatus(savedDiscovery.status === 'no_suitable' || savedDiscovery.status === 'provider_unavailable' || savedDiscovery.status === 'ok' ? savedDiscovery.status : 'error');
+      setMeta(savedDiscovery.meta || null);
+      setFilteredOut(savedDiscovery.filteredOut || []);
+      setManualNote(savedDiscovery.manualNote || '');
+      setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+  }, [activeSearch?.id, navigate]);
 
   useEffect(() => {
+    if (skipInitialFilterFetchRef.current) {
+      skipInitialFilterFetchRef.current = false;
+      return;
+    }
     if (profile) fetchBusinesses(profile);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterWorkType, filterCapital, filterScheme, radiusKm]);
 
-  const activeFilterCount = [filterWorkType, filterCapital, filterScheme].filter(Boolean).length;
-
-  const clearFilters = () => {
-    setFilterWorkType('');
-    setFilterCapital(false);
-    setFilterScheme(false);
-  };
+  useEffect(() => () => abortControllerRef.current?.abort(), []);
 
   const toggleSelection = (id: string) => {
     setSelectedIds(prev => {
@@ -170,9 +236,9 @@ export default function ExploreBusinesses() {
   };
 
   const handleCompare = () => {
-    if (selectedIds.length < 2) return;
+    if (selectedIds.length === 0) return;
     const selectedBusinesses = businesses.filter(b => selectedIds.includes(b.id));
-    sessionStorage.setItem('arthniti-compared-businesses', JSON.stringify(selectedBusinesses));
+    updateActiveSearch({ comparison: { businesses: selectedBusinesses } });
     navigate('compare');
   };
 
@@ -188,67 +254,60 @@ export default function ExploreBusinesses() {
               Showing opportunities tailored for <span className="font-bold text-on-surface">{profile.location.district}</span>
               {meta?.provider ? <> · Source: {meta.provider}</> : null}
               {meta?.retrievedAt ? <> · {new Date(meta.retrievedAt).toLocaleString('en-IN')}</> : null}
+              {meta?.cacheStatus === 'fresh' ? <> · Cached local signals</> : null}
+              {meta?.cacheStatus === 'stale' ? <> · Showing saved local signals while OSM reconnects</> : null}
             </p>
           </div>
-          <button
-            onClick={handleCompare}
-            disabled={selectedIds.length < 2}
-            className="shrink-0 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white font-headline font-bold py-2.5 px-6 rounded-xl text-sm hover:shadow-[0_0_20px_rgba(255,90,0,0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            Compare Selected ({selectedIds.length}/3)
-            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                clearActiveSearch();
+                navigate('advisory');
+              }}
+              className="rounded-xl border border-red-400/30 px-4 py-2.5 text-sm font-bold text-red-300 hover:bg-red-400/10"
+            >
+              Clear advisory
+            </button>
+            <button
+              onClick={handleCompare}
+              disabled={selectedIds.length === 0}
+              className="shrink-0 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white font-headline font-bold py-2.5 px-6 rounded-xl text-sm hover:shadow-[0_0_20px_rgba(255,90,0,0.3)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {selectedIds.length === 1 ? 'Viability Check (1)' : `Compare Selected (${selectedIds.length}/3)`}
+              <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+            </button>
+          </div>
         </section>
 
-        {/* Filters */}
-        <section className="mb-6 flex flex-wrap items-center gap-3">
-          <select
-            value={filterWorkType}
-            onChange={e => setFilterWorkType(e.target.value)}
-            className="bg-surface-container border border-outline-variant/10 rounded-lg px-3 py-1.5 text-xs text-on-surface focus:outline-none"
-          >
-            <option value="">All Categories</option>
-            <option value="retail">Retail</option>
-            <option value="service">Services</option>
-            <option value="manufacturing">Manufacturing</option>
-            <option value="agriculture-linked">Agriculture Linked</option>
-          </select>
-
-          <select
-            value={radiusKm}
-            onChange={e => setRadiusKm(Number(e.target.value) as 5 | 10 | 20)}
-            className="bg-surface-container border border-outline-variant/10 rounded-lg px-3 py-1.5 text-xs text-on-surface focus:outline-none"
-          >
-            <option value={5}>Radius 5 km</option>
-            <option value={10}>Radius 10 km</option>
-            <option value={20}>Radius 20 km</option>
-          </select>
-
-          <label className="flex items-center gap-2 bg-surface-container border border-outline-variant/10 rounded-lg px-3 py-1.5 text-xs text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors">
-            <input type="checkbox" checked={filterCapital} onChange={e => setFilterCapital(e.target.checked)} className="rounded text-[#FF5A00] focus:ring-[#FF5A00]/50" />
-            Within my budget (₹{Number(profile.marginCapital || 0).toLocaleString('en-IN')})
-          </label>
-
-          <label className="flex items-center gap-2 bg-surface-container border border-outline-variant/10 rounded-lg px-3 py-1.5 text-xs text-on-surface cursor-pointer hover:bg-surface-container-high transition-colors">
-            <input type="checkbox" checked={filterScheme} onChange={e => setFilterScheme(e.target.checked)} className="rounded text-[#FF5A00] focus:ring-[#FF5A00]/50" />
-            Scheme Supported
-          </label>
-
-          {activeFilterCount > 0 && (
-            <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface/50">
-              {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active
-            </span>
-          )}
-
-          {activeFilterCount > 0 && (
-            <button onClick={clearFilters} className="text-xs text-[#FF5A00] underline ml-1">Clear all filters</button>
-          )}
+        <section className="mb-6 flex flex-wrap items-center gap-2 text-xs text-on-surface/65">
+          <span className="font-bold text-on-surface/50">Search settings:</span>
+          <span className="rounded-full bg-surface-container px-3 py-1.5">{filterWorkType ? `${filterWorkType.replace('-', ' ')} only` : 'All categories'}</span>
+          <span className="rounded-full bg-surface-container px-3 py-1.5">{radiusKm} km radius</span>
+          {filterCapital && <span className="rounded-full bg-surface-container px-3 py-1.5">Within budget</span>}
+          {filterScheme && <span className="rounded-full bg-surface-container px-3 py-1.5">Scheme supported</span>}
+          <button onClick={() => navigate('advisory')} className="ml-1 text-[#FF8C00] underline">Change in Business Advisory</button>
         </section>
 
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-on-surface/60">
             <div className="w-10 h-10 border-3 border-[#FF5A00] border-t-transparent rounded-full animate-spin mb-4"></div>
             <p className="font-headline font-bold">Searching nearby businesses and opportunity signals…</p>
+            <div
+              className="mt-4 w-full max-w-sm"
+              role="progressbar"
+              aria-label="Loading nearby businesses and opportunity signals"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={searchProgress}
+            >
+              <div className="h-2 overflow-hidden rounded-full bg-surface-container-high border border-outline-variant/20">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#FF5A00] to-[#FF9A4D] transition-[width] duration-300 ease-out"
+                  style={{ width: `${searchProgress}%` }}
+                />
+              </div>
+              <p className="mt-2 text-center text-xs font-medium text-on-surface/50">Loading local signals… {searchProgress}%</p>
+            </div>
           </div>
         ) : status === 'provider_unavailable' ? (
           <div className="bg-surface-container p-8 rounded-2xl text-center border border-outline-variant/10 max-w-2xl mx-auto mt-10">
@@ -274,7 +333,15 @@ export default function ExploreBusinesses() {
               />
               <button
                 onClick={() => {
-                  sessionStorage.setItem('arthniti-manual-observations', manualNote);
+                  updateActiveSearch({
+                    discovery: {
+                      results: businesses,
+                      meta,
+                      filteredOut,
+                      status,
+                      manualNote: manualNote.trim() || undefined,
+                    },
+                  });
                   fetchBusinesses(profile);
                 }}
                 className="mt-2 text-xs font-bold text-[#FF5A00]"

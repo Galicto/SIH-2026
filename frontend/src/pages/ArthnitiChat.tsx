@@ -3,9 +3,10 @@ import ReactMarkdown from 'react-markdown';
 import DashboardLayout from '../components/DashboardLayout';
 import { useLanguage } from '../lib/i18n';
 import { usePredX } from '../context/PredXContext';
-import { chatWithAdvisor, fetchAiHealth } from '../lib/geminiAdvisor';
+import { chatWithAdvisor, fetchAiHealth, type ModelSource } from '../lib/geminiAdvisor';
 import PanelErrorBoundary from '../components/PanelErrorBoundary';
 import { API_BASE_URL } from '../config';
+import { useAdvisory } from '../context/AdvisoryContext';
 
 interface ChatMessage {
   id: string;
@@ -13,6 +14,15 @@ interface ChatMessage {
   content: string;
   timestamp: Date;
 }
+
+const PROVIDER_STATUS_MESSAGE: Record<string, string> = {
+  missing_api_key: 'No API key is configured for this source.',
+  invalid_model: 'The configured model is not available for this source.',
+  payment_required: 'This OpenRouter account has no available credit for the selected model.',
+  quota_exceeded: 'The provider quota has been reached. Try again later.',
+  provider_timeout: 'The provider took too long to respond. Try again.',
+  network_failure: 'The provider could not be reached. Check your network and provider status.',
+};
 
 const SUGGESTED_QUESTIONS = {
   en: [
@@ -35,7 +45,14 @@ const SUGGESTED_QUESTIONS = {
 
 export default function ArthnitiChat() {
   const { t, lang, toggleLang } = useLanguage();
-  const { navigate } = usePredX();
+  const { navigate, pageProps } = usePredX();
+  const { activeSearch } = useAdvisory();
+  const assistantLaunch = pageProps?.assistantLaunch as {
+    id?: string;
+    prompt?: string;
+    pageLabel?: string;
+    context?: Record<string, any>;
+  } | undefined;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
@@ -44,10 +61,11 @@ export default function ArthnitiChat() {
   const [lastFailedStatus, setLastFailedStatus] = useState<number | null>(null);
   const [backendReachable, setBackendReachable] = useState<boolean | null>(null);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [modelSource, setModelSource] = useState<ModelSource>('gemini');
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const checkHealth = async () => {
+  const checkHealth = async (source: ModelSource = modelSource) => {
     setAiStatus('checking');
     try {
       const health = await fetch(`${API_BASE_URL}/api/health`);
@@ -56,7 +74,7 @@ export default function ArthnitiChat() {
       setBackendReachable(false);
     }
     try {
-      const data = await fetchAiHealth();
+      const data = await fetchAiHealth(source);
       setAiConfigured(data.status !== 'not_configured');
       if (data.status === 'connected') {
         setAiStatus('ready');
@@ -64,7 +82,8 @@ export default function ArthnitiChat() {
         setLastFailedStatus(null);
       } else {
         setAiStatus(data.status === 'not_configured' ? 'not_configured' : 'unavailable');
-        setAiMessage(`AI connection failed: ${data.safeReason || 'Unknown error'}`);
+        const reason = data.safeReason || 'unknown_error';
+        setAiMessage(PROVIDER_STATUS_MESSAGE[reason] || `AI connection failed: ${reason}`);
       }
     } catch {
       setAiStatus('unavailable');
@@ -74,8 +93,8 @@ export default function ArthnitiChat() {
   };
 
   useEffect(() => {
-    checkHealth();
-  }, []);
+    checkHealth(modelSource);
+  }, [modelSource]);
 
   const profile = useMemo(() => {
     try { return JSON.parse(sessionStorage.getItem('arthniti-profile') || 'null'); } catch { return null; }
@@ -102,6 +121,26 @@ export default function ArthnitiChat() {
     try { return JSON.parse(sessionStorage.getItem('arthniti-scheme-matches') || '[]'); } catch { return []; }
   }, []);
 
+  const launchContext = assistantLaunch?.context || {};
+  // Prefer the current saved advisory state, then the page-specific hand-off,
+  // so chat remains grounded even after a page change or browser refresh.
+  const currentProfile = activeSearch?.profile || launchContext.userProfile || profile;
+  const currentBusiness = launchContext.business || activeSearch?.selectedBusiness || business;
+  const currentCompared = activeSearch?.comparison?.businesses?.length
+    ? activeSearch.comparison.businesses
+    : compared;
+  const currentDiscoveryResults = activeSearch?.discovery?.results?.length
+    ? activeSearch.discovery.results
+    : discoveryResults;
+  const currentDiscoveryMeta = activeSearch?.discovery?.meta || discoveryMeta;
+  const currentComparison = activeSearch?.comparison?.result || comparisonApi;
+  const currentFinancialPlan = launchContext.financialPlan || activeSearch?.financialPlan?.plan || financialPlan;
+  const currentSchemeMatches = Array.isArray(launchContext.schemeMatches) && launchContext.schemeMatches.length
+    ? launchContext.schemeMatches
+    : activeSearch?.financialPlan?.matches?.length
+      ? activeSearch.financialPlan.matches
+      : schemeMatches;
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -119,25 +158,40 @@ export default function ArthnitiChat() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!assistantLaunch?.prompt) return;
+    setInput(assistantLaunch.prompt);
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [assistantLaunch?.id, assistantLaunch?.prompt]);
+
   const buildContext = () => {
-    const selected = business ? [business] : (compared.length ? compared : []);
+    const selected = currentBusiness ? [currentBusiness] : (currentCompared.length ? currentCompared : []);
     const sources: any[] = [];
-    if (discoveryMeta) sources.push({ type: 'discovery', ...discoveryMeta });
+    if (currentDiscoveryMeta) sources.push({ type: 'discovery', ...currentDiscoveryMeta });
     selected.forEach((b: any) => {
       if (b?.provenance) sources.push({ type: 'business', name: b.name, ...b.provenance });
     });
+    if (assistantLaunch?.pageLabel) {
+      sources.push({ type: 'page_context', page: assistantLaunch.pageLabel });
+    }
     return {
       language: lang === 'hi' ? 'hi' : 'en',
-      location: profile?.location || undefined,
-      businessDiscoveryResults: discoveryResults.length ? discoveryResults : undefined,
+      modelSource,
+      location: launchContext.location || currentProfile?.location || undefined,
+      businessDiscoveryResults: currentDiscoveryResults.length ? currentDiscoveryResults : undefined,
       selectedBusinesses: selected.length ? selected : undefined,
-      comparison: comparisonApi || (compared.length ? { businesses: compared } : undefined),
-      financialPlan: financialPlan || undefined,
-      schemeMatches: schemeMatches.length
-        ? schemeMatches
+      comparison: currentComparison || (currentCompared.length ? { businesses: currentCompared } : undefined),
+      financialPlan: currentFinancialPlan || undefined,
+      schemeMatches: currentSchemeMatches.length
+        ? currentSchemeMatches
         : selected.flatMap((b: any) => b?.matchedSchemes || []),
       sourceMetadata: sources,
-      context: { profile: profile || undefined },
+      context: {
+        profile: currentProfile || undefined,
+        pageLabel: assistantLaunch?.pageLabel || undefined,
+        pageContext: Object.keys(launchContext).length ? launchContext : undefined,
+      },
     };
   };
 
@@ -156,28 +210,30 @@ export default function ArthnitiChat() {
     setInput('');
     setIsThinking(true);
 
-    const result = await chatWithAdvisor(msg, buildContext());
+    try {
+      const result = await chatWithAdvisor(msg, buildContext());
 
-    if (result.ok) {
-      setMessages(prev => [...prev, {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: result.response,
-        timestamp: new Date(),
-      }]);
-      setLastFailedStatus(null);
-    } else {
-      setMessages(prev => [...prev, {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: `Sorry, I encountered an error: ${result.message}`,
-        timestamp: new Date(),
-      }]);
-      setLastFailedStatus(result.statusCode);
+      if (result.ok) {
+        setMessages(prev => [...prev, {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: result.response,
+          timestamp: new Date(),
+        }]);
+        setLastFailedStatus(null);
+      } else {
+        setMessages(prev => [...prev, {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: `Sorry, I encountered an error: ${result.message}`,
+          timestamp: new Date(),
+        }]);
+        setLastFailedStatus(result.statusCode);
+      }
+    } finally {
+      setIsThinking(false);
+      inputRef.current?.focus();
     }
-
-    setIsThinking(false);
-    inputRef.current?.focus();
   };
 
   const questions = SUGGESTED_QUESTIONS[lang] || SUGGESTED_QUESTIONS.en;
@@ -195,13 +251,30 @@ export default function ArthnitiChat() {
             <div>
               <h1 className="text-lg font-headline font-bold text-on-surface">{t('chat.title')}</h1>
               <p className="text-[10px] font-label text-on-surface/50 uppercase tracking-wider">
-                {business || compared.length
-                  ? (lang === 'hi' ? 'आपकी रिपोर्ट से संदर्भ' : 'Context from your report')
+                {assistantLaunch?.pageLabel
+                  ? `Context: ${assistantLaunch.pageLabel}`
+                  : currentBusiness || currentCompared.length
+                    ? (lang === 'hi' ? 'आपकी रिपोर्ट से संदर्भ' : 'Context from your report')
                   : (lang === 'hi' ? 'सामान्य सलाहकार' : 'General Advisor')}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 bg-on-surface/5 border border-on-surface/10 px-3 py-1.5 rounded-xl text-xs font-body font-semibold text-on-surface/70">
+              <span className="hidden sm:inline">Model source</span>
+              <select
+                value={modelSource}
+                onChange={event => setModelSource(event.target.value as ModelSource)}
+                disabled={isThinking}
+                aria-label="Model source"
+                className="bg-transparent text-on-surface focus:outline-none disabled:opacity-50"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="ollama">Ollama (local)</option>
+                <option value="ollama_cloud">Ollama Cloud</option>
+              </select>
+            </label>
             <button
               onClick={() => navigate('explore')}
               className="text-[10px] font-bold text-[#FF5A00] px-2 py-1 rounded-lg hover:bg-[#FF5A00]/10"
@@ -225,7 +298,7 @@ export default function ArthnitiChat() {
             <p className="text-sm text-on-surface/60 mb-4">{aiMessage}</p>
             <div className="flex flex-wrap justify-center gap-2">
               <button
-                onClick={checkHealth}
+                onClick={() => checkHealth(modelSource)}
                 className="bg-[#FF5A00]/10 text-[#FF5A00] px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#FF5A00]/20"
               >
                 Retry
@@ -243,6 +316,24 @@ export default function ArthnitiChat() {
                 View Report
               </button>
             </div>
+          </div>
+        )}
+
+        {modelSource === 'gemini' && aiStatus === 'not_configured' && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-on-surface/75 flex-shrink-0">
+            Gemini needs a valid <code>GEMINI_API_KEY</code> in <code>backend/.env</code>. This workspace has no Gemini key configured, so select OpenRouter or add that key and restart the backend.
+          </div>
+        )}
+
+        {modelSource === 'ollama' && aiStatus === 'unavailable' && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-on-surface/75 flex-shrink-0">
+            Ollama runs locally and does not need an API key. Start Ollama, then pull the configured model (default: <code>llama3.2</code>) before retrying.
+          </div>
+        )}
+
+        {modelSource === 'ollama_cloud' && aiStatus === 'not_configured' && (
+          <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-on-surface/75 flex-shrink-0">
+            Ollama Cloud needs an <code>OLLAMA_API_KEY</code> in <code>backend/.env</code>. It uses the configured cloud model (default: <code>gpt-oss:120b</code>).
           </div>
         )}
 

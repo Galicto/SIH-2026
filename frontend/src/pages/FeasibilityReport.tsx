@@ -7,23 +7,26 @@ import LocalBusinessMap from '../components/LocalBusinessMap';
 import PanelErrorBoundary from '../components/PanelErrorBoundary';
 import { normalizeFeasibilityReportResponse } from '../lib/schemas';
 import { safeNumber, safeCurrency, safeString, safeDate } from '../lib/safeFormatters';
+import { API_BASE_URL } from '../config';
+import { useAdvisory } from '../context/AdvisoryContext';
 
 export default function FeasibilityReport() {
   const { navigate } = usePredX();
+  const { activeSearch, updateActiveSearch } = useAdvisory();
   const [activeTab, setActiveTab] = useState<'report' | 'map'>('report');
   
   // States
-  const [report, setReport] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<any>(activeSearch?.feasibilityReport || null);
+  const [loading, setLoading] = useState(!activeSearch?.feasibilityReport);
   const [error, setError] = useState<string | null>(null);
   
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastRequestIdRef = useRef<number>(0);
 
   const profileStr = sessionStorage.getItem('arthniti-profile');
-  const profile = profileStr ? JSON.parse(profileStr) : null;
+  const profile = activeSearch?.profile || (profileStr ? JSON.parse(profileStr) : null);
   const businessStr = sessionStorage.getItem('arthniti-selected-business');
-  const business: BusinessItem = businessStr ? JSON.parse(businessStr) : null;
+  const business: BusinessItem = activeSearch?.selectedBusiness || (businessStr ? JSON.parse(businessStr) : null);
 
   const fetchReport = async () => {
     if (!profile || !business) return;
@@ -41,14 +44,14 @@ export default function FeasibilityReport() {
     setError(null);
 
     try {
-      const res = await fetch('http://localhost:8000/api/feasibility/report', {
+      const res = await fetch(`${API_BASE_URL}/api/feasibility/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           location: profile.location,
           business: business,
           userProfile: profile,
-          budget: profile.marginCapital || 500000,
+          budget: profile.marginCapital || 0,
           selectedScenario: 'expected'
         }),
         signal: controller.signal
@@ -60,6 +63,7 @@ export default function FeasibilityReport() {
       if (lastRequestIdRef.current === requestId) {
         const normalized = normalizeFeasibilityReportResponse(data);
         setReport(normalized);
+        updateActiveSearch({ feasibilityReport: normalized });
       }
     } catch (err: any) {
       if (err.name === 'AbortError') return;
@@ -74,11 +78,19 @@ export default function FeasibilityReport() {
   };
 
   useEffect(() => {
+    const cachedAdvisoryMessage = String(activeSearch?.feasibilityReport?.strategicAdvisory?.message || '').toLowerCase();
+    const cachedAdvisoryTimedOut = cachedAdvisoryMessage.includes('timed out') || cachedAdvisoryMessage.includes('response window');
+    const cachedAdvisoryUnavailable = ['unavailable', 'error'].includes(activeSearch?.feasibilityReport?.strategicAdvisory?.status);
+    if (activeSearch?.feasibilityReport?.marketAnalysis && activeSearch?.feasibilityReport?.financials?.terms && !cachedAdvisoryTimedOut && !cachedAdvisoryUnavailable) {
+      setReport(activeSearch.feasibilityReport);
+      setLoading(false);
+      return;
+    }
     fetchReport();
     return () => {
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
-  }, [profile?.location?.district, business?.category]);
+  }, [activeSearch?.id, profile?.location?.district, business?.category]);
 
   if (!profile || !business) {
     return (
@@ -91,7 +103,10 @@ export default function FeasibilityReport() {
     );
   }
 
-  const surplus = business.avgRevenue - business.avgOperatingCost;
+  const financials = report?.financials?.financials || {};
+  const market = report?.marketAnalysis || {};
+  const monthlySurplus = Number(financials.monthlySurplus ?? (business.avgRevenue - business.avgOperatingCost - Number(profile.householdExpenses || 0)));
+  const recoveryMonths = market?.breakEven?.estimatedCapitalRecoveryMonths;
 
   return (
     <DashboardLayout>
@@ -117,7 +132,22 @@ export default function FeasibilityReport() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('arthniti-chat')}
+              onClick={() => navigate('arthniti-chat', {
+                assistantLaunch: {
+                  id: `feasibility-${activeSearch?.id || business.id}-${report?.reportId || 'current'}`,
+                  prompt: `Please help with ${business.name} Feasibility Report.`,
+                  pageLabel: `${business.name} Feasibility Report`,
+                  context: {
+                    page: 'feasibility_report',
+                    business,
+                    location: profile.location,
+                    userProfile: profile,
+                    feasibilityReport: report,
+                    financialPlan: report?.financials,
+                    schemeMatches: report?.schemeMatching?.matches || business.matchedSchemes || [],
+                  },
+                },
+              })}
               className="flex items-center gap-2 bg-on-surface/5 border border-on-surface/10 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-on-surface/10 transition-colors"
             >
               <span className="material-symbols-outlined text-[18px]">smart_toy</span>
@@ -178,14 +208,14 @@ export default function FeasibilityReport() {
                   </div>
                 ) : (
                   <p className="text-sm text-on-surface leading-relaxed mb-4">
-                    Based on your profile and {business.name}, we've analyzed {profile.location.district}. Here is your deterministic financial estimate alongside strategic AI insights.
+                    {report?.summary?.headline || `A location-aware feasibility view for ${business.name} in ${profile.location.district}.`} Financial, demand and scheme sections use the same planning assumptions as the Viability Passport.
                   </p>
                 )}
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-on-surface/5 rounded-xl p-3 border border-outline-variant/5">
                     <p className="text-[10px] text-on-surface-variant uppercase mb-1">Viability Score</p>
-                    <p className="text-xl font-bold text-[#00FFA3]">{business.demandProxyScore}</p>
+                    <p className="text-xl font-bold text-[#00FFA3]">{report?.summary?.viabilityScore ?? business.demandProxyScore}</p>
                   </div>
                   <div className="bg-on-surface/5 rounded-xl p-3 border border-outline-variant/5">
                     <p className="text-[10px] text-on-surface-variant uppercase mb-1">Competition</p>
@@ -193,11 +223,11 @@ export default function FeasibilityReport() {
                   </div>
                   <div className="bg-on-surface/5 rounded-xl p-3 border border-outline-variant/5">
                     <p className="text-[10px] text-on-surface-variant uppercase mb-1">Est. Surplus</p>
-                    <p className="text-xl font-bold text-on-surface">₹{(surplus/1000).toFixed(0)}k</p>
+                    <p className={`text-xl font-bold ${monthlySurplus > 0 ? 'text-[#00FFA3]' : 'text-red-300'}`}>₹{(monthlySurplus/1000).toFixed(0)}k</p>
                   </div>
                   <div className="bg-on-surface/5 rounded-xl p-3 border border-outline-variant/5">
-                    <p className="text-[10px] text-on-surface-variant uppercase mb-1">Break-even</p>
-                    <p className="text-xl font-bold text-on-surface">~{Math.ceil((business.avgOperatingCost * 3) / surplus)} mo</p>
+                    <p className="text-[10px] text-on-surface-variant uppercase mb-1">Capital recovery</p>
+                    <p className="text-xl font-bold text-on-surface">{recoveryMonths ? `~${recoveryMonths} mo` : 'Review plan'}</p>
                   </div>
                 </div>
               </div>
@@ -220,25 +250,35 @@ export default function FeasibilityReport() {
                       </button>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
-                        <h4 className="text-emerald-500 font-bold text-xs uppercase mb-2">Why Recommended</h4>
-                        <ul className="text-xs text-on-surface/80 space-y-1 list-disc pl-4">
-                          {report?.strategicAdvisory?.advisory?.whyRecommended?.map((r: any, i: number) => <li key={i}>{typeof r === 'object' ? JSON.stringify(r) : safeString(r)}</li>)}
-                        </ul>
+                    <>
+                      {report?.strategicAdvisory?.status === 'fallback' && (
+                        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-center">
+                          <p className="text-xs text-on-surface/80 mb-2">{report.strategicAdvisory.message}</p>
+                          <button onClick={fetchReport} className="rounded bg-amber-500/15 px-4 py-1.5 text-xs font-bold text-amber-500 transition-colors hover:bg-amber-500/25">
+                            Retry AI Insight
+                          </button>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl">
+                          <h4 className="text-emerald-500 font-bold text-xs uppercase mb-2">Why Recommended</h4>
+                          <ul className="text-xs text-on-surface/80 space-y-1 list-disc pl-4">
+                            {report?.strategicAdvisory?.advisory?.whyRecommended?.map((r: any, i: number) => <li key={i}>{typeof r === 'object' ? JSON.stringify(r) : safeString(r)}</li>)}
+                          </ul>
+                        </div>
+                        <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
+                          <h4 className="text-red-400 font-bold text-xs uppercase mb-2">Risks & Mitigations</h4>
+                          <ul className="text-xs text-on-surface/80 space-y-2 pl-2">
+                            {report?.strategicAdvisory?.advisory?.risksAndMitigations?.map((r: any, i: number) => (
+                              <li key={i}>
+                                <span className="font-bold text-red-400 block">{typeof r?.risk === 'object' ? JSON.stringify(r.risk) : (safeString(r?.risk) || 'Risk factor')}</span>
+                                <span className="text-on-surface/60">{typeof r?.mitigation === 'object' ? JSON.stringify(r.mitigation) : (safeString(r?.mitigation) || typeof r === 'string' ? safeString(r) : 'Mitigation unavailable')}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </div>
-                      <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl">
-                        <h4 className="text-red-400 font-bold text-xs uppercase mb-2">Risks & Mitigations</h4>
-                        <ul className="text-xs text-on-surface/80 space-y-2 pl-2">
-                          {report?.strategicAdvisory?.advisory?.risksAndMitigations?.map((r: any, i: number) => (
-                            <li key={i}>
-                              <span className="font-bold text-red-400 block">{typeof r?.risk === 'object' ? JSON.stringify(r.risk) : (safeString(r?.risk) || 'Risk factor')}</span>
-                              <span className="text-on-surface/60">{typeof r?.mitigation === 'object' ? JSON.stringify(r.mitigation) : (safeString(r?.mitigation) || typeof r === 'string' ? safeString(r) : 'Mitigation unavailable')}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
+                    </>
                   )}
 
                   <h4 className="text-xs font-bold text-on-surface mb-2">Data & Sources Provenance</h4>
@@ -259,6 +299,33 @@ export default function FeasibilityReport() {
                   </div>
                 </div>
               </PanelErrorBoundary>
+
+              {!loading && (
+                <section className="bg-surface-container rounded-2xl p-6 border border-outline-variant/10">
+                  <h3 className="text-sm font-bold text-on-surface-variant uppercase tracking-wider mb-4">Market, costs & next steps</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div className="rounded-xl bg-on-surface/5 p-4">
+                      <p className="text-xs font-bold text-on-surface mb-2">Demand & customers</p>
+                      <p className="text-on-surface/70 text-xs">{market?.demand?.summary || business.signals || 'Local demand details are unavailable.'}</p>
+                      <ul className="mt-3 space-y-1 text-xs text-on-surface/70">{(market?.customerSegments || []).slice(0, 3).map((segment: string) => <li key={segment}>• {segment}</li>)}</ul>
+                    </div>
+                    <div className="rounded-xl bg-on-surface/5 p-4">
+                      <p className="text-xs font-bold text-on-surface mb-2">Cost & break-even</p>
+                      <p className="text-xs text-on-surface/70">Startup cost: {safeCurrency(financials.projectCost)} · Monthly operating cost: {safeCurrency(financials.monthlyOperatingCost)}</p>
+                      <p className="mt-2 text-xs text-on-surface/70">Monthly revenue needed: {safeCurrency(market?.breakEven?.monthlyRevenueNeeded)}.</p>
+                      <p className="mt-2 text-xs text-on-surface/70">Estimated EMI: {safeCurrency(financials.monthlyEmi)} · {financials.emiToSurplusRatio ?? '—'}% of projected surplus.</p>
+                    </div>
+                    <div className="rounded-xl bg-red-500/5 border border-red-500/15 p-4">
+                      <p className="text-xs font-bold text-red-300 mb-2">Risks & mitigations</p>
+                      <ul className="space-y-2 text-xs text-on-surface/70">{(market?.risksAndMitigations || []).slice(0, 3).map((item: any, index: number) => <li key={index}><span className="font-semibold text-on-surface">{safeString(item?.risk)}</span><br />{safeString(item?.mitigation)}</li>)}</ul>
+                    </div>
+                    <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/15 p-4">
+                      <p className="text-xs font-bold text-emerald-300 mb-2">Next steps</p>
+                      <ol className="space-y-2 text-xs text-on-surface/70">{(market?.nextSteps || []).slice(0, 4).map((step: string, index: number) => <li key={step}>{index + 1}. {step}</li>)}</ol>
+                    </div>
+                  </div>
+                </section>
+              )}
 
             </div>
 
@@ -281,8 +348,10 @@ export default function FeasibilityReport() {
                     </div>
                     <div>
                       <p className="text-[10px] text-on-surface-variant uppercase">Population Base</p>
-                      <p className="text-sm font-semibold text-on-surface">{report?.locationContext?.population?.toLocaleString('en-IN') || profile?.location?.population?.toLocaleString('en-IN')}</p>
+                      <p className="text-sm font-semibold text-on-surface">{report?.locationContext?.population?.toLocaleString('en-IN') || 'Official Census data unavailable'}</p>
+                      {report?.locationContext?.census?.year && <p className="text-[10px] text-on-surface/45 mt-1">Census {report.locationContext.census.year} · {report.locationContext.census.geographicLevel || 'area'}</p>}
                     </div>
+                    {report?.locationContext?.census?.attribution && <p className="text-[10px] text-on-surface/45 leading-relaxed">{report.locationContext.census.attribution}</p>}
                   </div>
                 )}
               </div>
